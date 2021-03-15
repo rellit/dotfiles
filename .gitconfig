@@ -1,0 +1,16 @@
+[user]
+	name = Tim
+	email = tim.haller@eiskonzept.com
+[alias]
+	some = !'/c/Users/Tim.EIS5DC/Desktop/git_schulung/git-some/git-some'
+	gl = log --oneline --graph --all
+	diverged = !git init && git some 2 && git checkout -b topic && git some 3 && git checkout - && git some
+[diff]
+	tool = diffmerge
+[difftool "diffmerge"]
+	cmd = C:/Program\\ Files/SourceGear/Common/DiffMerge/sgdm.exe "$LOCAL" "$REMOTE"
+[merge]
+	tool = diffmerge
+[mergetool "diffmerge"]
+	trustExitCode = true
+	cmd = C:/Program\\ Files/SourceGear/Common/DiffMerge/sgdm.exe -merge -result="$MERGED" "$LOCAL" "$BASE" "$REMOTE"
