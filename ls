@@ -1,1 +1,4 @@
-: 1616147148:0;git commit -am 'Removed ls'
+git commit -am 'Removed ls'
+git push
+zsh
+exit

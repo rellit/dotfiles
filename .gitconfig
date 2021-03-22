@@ -1,6 +1,8 @@
 [user]
 	name = Tim
 	email = tim.haller@eiskonzept.com
+[core]
+	autocrlf=true
 [alias]
 	some = !'/c/Users/Tim.EIS5DC/Desktop/git_schulung/git-some/git-some'
 	gl = log --oneline --graph --all
