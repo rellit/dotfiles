@@ -3,7 +3,7 @@
 #Update Packages & Install Zsh and Plugins
 sudo apt-get update -y
 sudo apt-get upgrade -y
-sudo apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions -y
+sudo apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions keychain -y
 
 chsh -s /usr/bin/zsh
 
