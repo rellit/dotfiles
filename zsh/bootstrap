@@ -1,0 +1,19 @@
+#!/bin/bash
+
+#Update Packages & Install Zsh and Plugins
+apt-get update -y
+apt-get upgrade -y
+apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions -y
+
+chsh -s /usr/bin/zsh
+
+#Install powerlevel10k
+git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
+
+#Remove existing symlinks
+rm -f ~/.zshrc
+rm -f ~/.p10k.zsh
+
+#Create symlinks
+ln -s ~/dotfiles/zsh/.zshrc ~/.zshrc
+ln -s ~/dotfiles/zsh/.p10k.zsh ~/.p10k.zsh
