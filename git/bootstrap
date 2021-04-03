@@ -4,3 +4,9 @@
 add-apt-repository ppa:git-core/ppa
 apt update -y
 apt install git -y
+
+#Remove symlinks
+rm -f ~/.gitconfig
+
+#Create symlink
+ln -s ~/dotfiles/git/.gitconfig ~/.gitconfig
