@@ -2,7 +2,7 @@
 	name = Tim
 	email = mail@timhaller.de
 [core]
-	autocrlf=true
+	autocrlf=false
 [alias]
 	some = !'/c/Users/Tim.EIS5DC/Desktop/git_schulung/git-some/git-some'
 	gl = log --oneline --graph --all
