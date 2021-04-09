@@ -16,3 +16,5 @@
 [mergetool "diffmerge"]
 	trustExitCode = true
 	cmd = C:/Program\\ Files/SourceGear/Common/DiffMerge/sgdm.exe -merge -result="$MERGED" "$LOCAL" "$BASE" "$REMOTE"
+[pull]
+	rebase = false

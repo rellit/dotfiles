@@ -47,23 +47,48 @@ source ~/powerlevel10k/powerlevel10k.zsh-theme
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
-#Aliase
+##############
+### Aliase ###
+##############
+#DIR
 alias ls='ls --color=auto'
 alias ll='ls -l'
-alias la='ls -la'
+alias la='ls -lA'
+alias ..='cd ..'
+
+#Console
 alias cls=clear
+
+#Sudo
 alias pls='sudo $(fc -ln -1)'
+
+#Git
 alias gaa='git add .'
 alias gcm='git commit -m'
-alias cmd='cmd.exe /C'
+alias gs='git status'
+alias gl='git log --oneline --graph'
 
-#KeyChain
+#WSL Only
+if grep -q microsoft /proc/version; then
+    alias cmd='cmd.exe /C'
+fi
+
+#Tools
+alias grep='grep --color=auto'
+
+################
+### KeyChain ###
+################
 # For Loading the SSH key
 /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
 source $HOME/.keychain/$HOST-sh
 
+###########
+### ZSH ###
+###########
+
 #Autosuggestions
-source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
+#source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 
 #History search
 # start typing + [Up-Arrow] - fuzzy find history forward
