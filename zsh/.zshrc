@@ -55,6 +55,11 @@ alias ls='ls --color=auto'
 alias ll='ls -l'
 alias la='ls -lA'
 alias ..='cd ..'
+function mkcd
+{
+  dir="$*";
+  mkdir -p "$dir" && cd "$dir";
+}
 
 ##############################
 ### Don't do sonething bad ###
@@ -92,14 +97,13 @@ alias grep='grep --color=auto'
 /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
 source $HOME/.keychain/$HOST-sh
 
-###########
-### ZSH ###
-###########
-
 #Autosuggestions
 #source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
 
-#History search
+######################
+### History search ###
+######################
+
 # start typing + [Up-Arrow] - fuzzy find history forward
 if [[ "${terminfo[kcuu1]}" != "" ]]; then
     autoload -U up-line-or-beginning-search
@@ -113,18 +117,28 @@ if [[ "${terminfo[kcud1]}" != "" ]]; then
     bindkey "${terminfo[kcud1]}" down-line-or-beginning-search
 fi
 
-#Windows XServer Display
+###############################
+### Windows XServer Display ###
+###############################
 if grep -q microsoft /proc/version; then
     export LIBGL_ALWAYS_INDIRECT=1
     export WSL_HOST=$(ipconfig.exe | egrep '.*?(IPv4).*?\ (192).*' | tail -1 | rev| awk '{print $1}' | rev | tr -d '\r')
     export DISPLAY=$WSL_HOST:0.0
 fi
 
+####################
+### Clear Screen ###
+####################
+clear
+
+###########################
 ### RANDOM COLOR SCRIPT ###
+###########################
 if which colorscript>/dev/null; then
 	colorscript random
 fi
 
-
-#Syntax Highlight
+########################
+### Syntax Highlight ###
+########################
 source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
