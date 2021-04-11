@@ -56,6 +56,13 @@ alias ll='ls -l'
 alias la='ls -lA'
 alias ..='cd ..'
 
+##############################
+### Don't do sonething bad ###
+##############################
+alias rm='rm -i'
+alias cp='cp -i'
+alias mv='mv -i'
+
 #Console
 alias cls=clear
 
@@ -67,6 +74,8 @@ alias gaa='git add .'
 alias gcm='git commit -m'
 alias gs='git status'
 alias gl='git log --oneline --graph'
+alias gpl='git pull'
+alias gp='git push'
 
 #WSL Only
 if grep -q microsoft /proc/version; then
@@ -107,9 +116,15 @@ fi
 #Windows XServer Display
 if grep -q microsoft /proc/version; then
     export LIBGL_ALWAYS_INDIRECT=1
-    export WSL_HOST=$(ipconfig.exe | grep IPv4 | tail -1 | rev| awk '{print $1}' | rev | tr -d '\r')
+    export WSL_HOST=$(ipconfig.exe | egrep '.*?(IPv4).*?\ (192).*' | tail -1 | rev| awk '{print $1}' | rev | tr -d '\r')
     export DISPLAY=$WSL_HOST:0.0
 fi
+
+### RANDOM COLOR SCRIPT ###
+if which colorscript>/dev/null; then
+	colorscript random
+fi
+
 
 #Syntax Highlight
 source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
