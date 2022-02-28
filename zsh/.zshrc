@@ -81,6 +81,8 @@ alias gs='git status'
 alias gl='git log --oneline --graph'
 alias gpl='git pull'
 alias gp='git push'
+alias grs='git restore --staged'
+alias gfs='git fetch && git switch'
 
 #WSL Only
 if grep -q microsoft /proc/version; then
