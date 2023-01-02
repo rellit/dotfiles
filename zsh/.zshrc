@@ -117,15 +117,6 @@ if [[ "${terminfo[kcud1]}" != "" ]]; then
     bindkey "${terminfo[kcud1]}" down-line-or-beginning-search
 fi
 
-###############################
-### Windows XServer Display ###
-###############################
-if grep -q microsoft /proc/version; then
-    export LIBGL_ALWAYS_INDIRECT=1
-    export WSL_HOST=$(ipconfig.exe | egrep '.*?(IPv4).*?\ (192).*' | tail -1 | rev| awk '{print $1}' | rev | tr -d '\r')
-    export DISPLAY=$WSL_HOST:0.0
-fi
-
 ####################
 ### Clear Screen ###
 ####################
@@ -138,7 +129,21 @@ if which colorscript>/dev/null; then
 	colorscript random
 fi
 
+
+############
+### Ruby ###
+############
+# Install Ruby Gems to ~/gems
+export GEM_HOME="$HOME/gems"
+export PATH="$HOME/gems/bin:$PATH"
+
+
+
 ########################
 ### Syntax Highlight ###
 ########################
 source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+
+
+# Load Angular CLI autocompletion.
+source <(ng completion script)
