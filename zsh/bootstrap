@@ -8,7 +8,7 @@ sudo apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions keychain -y
 chsh -s /usr/bin/zsh
 
 #Install powerlevel10k
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/powerlevel10k
+git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/dotfiles/zsh/powerlevel10k
 
 #Remove existing symlinks
 rm -f ~/.zshrc
