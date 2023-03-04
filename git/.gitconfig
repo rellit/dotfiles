@@ -4,7 +4,6 @@
 [core]
 	autocrlf=false
 [alias]
-	some = !'/c/Users/Tim.EIS5DC/Desktop/git_schulung/git-some/git-some'
 	gl = log --oneline --graph --all
 	diverged = !git init && git some 2 && git checkout -b topic && git some 3 && git checkout - && git some
 [diff]
