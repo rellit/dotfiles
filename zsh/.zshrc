@@ -50,11 +50,22 @@ source ~/dotfiles/zsh/powerlevel10k/powerlevel10k.zsh-theme
 ##############
 ### Aliase ###
 ##############
-#DIR
+#Navigation & Listing
 alias ls='ls --color=auto'
 alias ll='ls -l'
 alias la='ls -lA'
 alias ..='cd ..'
+alias ...='cd ../..'
+alias .3='cd ../../../'
+alias .4='cd ../../../../'
+alias .5='cd ../../../../../'
+
+#Pacman
+alias pacsyu='sudo pacman -Syyu'
+alias orphan='pacman -Qtdq'
+alias cleanup='sudo pacman -Rscn $(pacman -Qtdq)'
+
+
 function mkcd
 {
   dir="$*";
@@ -70,6 +81,10 @@ alias mv='mv -i'
 
 #Console
 alias cls=clear
+alias nano='nano -m'
+
+#dotfiles config
+alias config='/usr/bin/git --git-dir=$HOME/dot/ --work-tree=$HOME'
 
 #Sudo
 alias pls='sudo $(fc -ln -1)'
@@ -91,6 +106,8 @@ else
     alias otp='echo To use save hex-secret in ~/.eisOTPSecret'
 fi
 
+alias eisvpn='echo $(cat ~/.eisPassword)$(otp) | nmcli con up id Tim@vpn.eiskonzept.com --ask'
+
 #WSL Only
 if grep -q microsoft /proc/version; then
     alias cmd='cmd.exe /C'
@@ -98,6 +115,14 @@ fi
 
 #Tools
 alias grep='grep --color=auto'
+alias df='df -h'
+if which htop > /dev/null; then
+    alias top='htop'
+fi
+
+#Navigation
+
+
 
 ################
 ### KeyChain ###
@@ -152,10 +177,19 @@ export PATH="$HOME/gems/bin:$PATH"
 ### Syntax Highlight ###
 ########################
 if test -f /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; then
-	source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+    source /usr/share/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 elif test -f /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh; then
-        source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
+    source /usr/share/zsh/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh
 fi
+
+#######################
+### Auto Suggestion ###
+#######################
+if test -f /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh; then
+     source /usr/share/zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh
+     ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+fi
+
 
 
 
