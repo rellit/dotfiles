@@ -128,8 +128,8 @@ fi
 ### KeyChain ###
 ################
 # For Loading the SSH key
-/usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
-source $HOME/.keychain/$HOST-sh
+echo '\n' | /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
+#source $HOME/.keychain/$HOST-sh
 
 #Autosuggestions
 #source /usr/share/zsh-autosuggestions/zsh-autosuggestions.zsh
