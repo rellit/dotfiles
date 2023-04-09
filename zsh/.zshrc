@@ -64,7 +64,7 @@ alias .5='cd ../../../../../'
 alias pacsyu='sudo pacman -Syyu'
 alias orphan='pacman -Qtdq'
 alias cleanup='sudo pacman -Rscn $(pacman -Qtdq)'
-
+alias yay='yay --noconfirm'
 
 function mkcd
 {
@@ -128,7 +128,7 @@ fi
 ### KeyChain ###
 ################
 # For Loading the SSH key
-echo '\n' | /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
+echo -e "\n" | /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
 source $HOME/.keychain/$HOST-sh
 
 #Autosuggestions
