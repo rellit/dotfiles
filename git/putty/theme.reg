@@ -1,0 +1,37 @@
+Windows Registry Editor Version 5.00
+
+[HKEY_CURRENT_USER\Software\SimonTatham\PuTTY\Sessions\Default%20Settings]
+"Font"="MesloLGS NF"
+"FontIsBold"=dword:00000000
+"FontCharSet"=dword:00000000
+"FontHeight"=dword:0000000a
+"FontQuality"=dword:00000000
+"FontVTMode"=dword:00000004
+"UseSystemColours"=dword:00000000
+"TryPalette"=dword:00000000
+"ANSIColour"=dword:00000001
+"Xterm256Colour"=dword:00000001
+"TrueColour"=dword:00000001
+"BoldAsColour"=dword:00000000
+"Colour0"="220,223,228"
+"Colour1"="255,255,255"
+"Colour2"="40,44,52"
+"Colour3"="85,85,85"
+"Colour4"="0,0,0"
+"Colour5"="255,255,255"
+"Colour6"="40,44,52"
+"Colour7"="85,85,85"
+"Colour8"="224,108,117"
+"Colour9"="255,85,85"
+"Colour10"="152,195,121"
+"Colour11"="85,255,85"
+"Colour12"="229,192,123"
+"Colour13"="255,255,85"
+"Colour14"="97,175,239"
+"Colour15"="85,85,255"
+"Colour16"="198,120,221"
+"Colour17"="255,85,255"
+"Colour18"="86,182,194"
+"Colour19"="85,255,255"
+"Colour20"="220,223,228"
+"Colour21"="255,255,255"
