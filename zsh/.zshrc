@@ -128,7 +128,7 @@ fi
 ### KeyChain ###
 ################
 # For Loading the SSH key
-echo -e "\n" | /usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
+/usr/bin/keychain -q --nogui $HOME/.ssh/id_rsa
 source $HOME/.keychain/$HOST-sh
 
 #Autosuggestions
@@ -242,3 +242,8 @@ if (( ${+terminfo[smkx]} && ${+terminfo[rmkx]} )); then
 	add-zle-hook-widget -Uz zle-line-init zle_application_mode_start
 	add-zle-hook-widget -Uz zle-line-finish zle_application_mode_stop
 fi
+
+if which zoxide > /dev/null; then
+eval "$(zoxide init zsh --cmd cd)"
+fi
+
