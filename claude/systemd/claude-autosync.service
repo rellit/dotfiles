@@ -1,0 +1,6 @@
+[Unit]
+Description=Commit and push ~/dotfiles/claude
+
+[Service]
+Type=oneshot
+ExecStart=%h/dotfiles/claude/autosync

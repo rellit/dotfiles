@@ -1,0 +1,58 @@
+#!/bin/bash
+#Commit and push changes in ~/dotfiles/claude automatically.
+#Commits to main when main is clean and up to date, otherwise to the branch claude-sync.
+
+REPO=~/dotfiles
+DIR=claude
+BRANCH=claude-sync
+
+cd "$REPO" || exit 1
+
+#Nothing to do if claude/ is unchanged and nothing is waiting to be pushed
+git fetch -q origin 2>/dev/null
+changes=$(git status --porcelain -- "$DIR")
+#Only own auto-sync commits are retried, never other unpushed work on main
+unpushed_main=$(git log --format=%s origin/main..main 2>/dev/null | grep '^claude: auto-sync')
+foreign_main=$(git log --format=%s origin/main..main 2>/dev/null | grep -v '^claude: auto-sync')
+unpushed_branch=""
+if git rev-parse -q --verify "refs/heads/$BRANCH" >/dev/null; then
+    unpushed_branch=$(git rev-list "origin/$BRANCH..$BRANCH" 2>/dev/null || echo new)
+fi
+if [ -z "$changes" ] && [ -z "$unpushed_main" ] && [ -z "$unpushed_branch" ]; then
+    exit 0
+fi
+
+msg="claude: auto-sync $(date '+%Y-%m-%d %H:%M')"
+
+#main is clean: checked out, no changes outside claude/, not behind origin, no foreign unpushed commits
+other=$(git status --porcelain | grep -v " $DIR/")
+behind=$(git rev-list main..origin/main 2>/dev/null)
+current=$(git symbolic-ref --short -q HEAD)
+
+if [ "$current" = "main" ] && [ -z "$other" ] && [ -z "$behind" ] && [ -z "$foreign_main" ]; then
+    if [ -n "$changes" ]; then
+        git add -A -- "$DIR"
+        git commit -q -m "$msg" -- "$DIR"
+    fi
+    git push -q origin main
+    exit $?
+fi
+
+#Otherwise commit claude/ onto the branch without touching the working tree or index
+if [ -n "$changes" ]; then
+    parent=$(git rev-parse -q --verify "refs/heads/$BRANCH" || git rev-parse HEAD)
+    tmp_index=$(mktemp)
+    rm -f "$tmp_index"
+    export GIT_INDEX_FILE=$tmp_index
+    git read-tree "$parent"
+    git add -A -- "$DIR"
+    tree=$(git write-tree)
+    unset GIT_INDEX_FILE
+    rm -f "$tmp_index"
+    if [ "$tree" != "$(git rev-parse "$parent^{tree}")" ]; then
+        commit=$(git commit-tree "$tree" -p "$parent" -m "$msg")
+        git update-ref "refs/heads/$BRANCH" "$commit"
+        notify-send "dotfiles" "main ist nicht sauber – Claude-Änderungen auf Branch $BRANCH committed" 2>/dev/null
+    fi
+fi
+git push -q origin "$BRANCH"

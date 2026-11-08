@@ -1,0 +1,31 @@
+#!/bin/bash
+
+#Install Claude Code
+if ! (which claude>/dev/null); then
+    curl -fsSL https://claude.ai/install.sh | bash
+fi
+
+mkdir -p ~/.claude
+
+#Remove existing symlinks, keep real files as .bak
+for f in ~/.claude/CLAUDE.md ~/.claude/skills; do
+    if [ -L "$f" ]; then
+        rm -f "$f"
+    elif [ -e "$f" ]; then
+        mv "$f" "$f.bak"
+    fi
+done
+
+#Create symlinks
+ln -s ~/dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md
+ln -s ~/dotfiles/claude/skills ~/.claude/skills
+
+#Auto-commit and push changes via systemd user timer
+if (which systemctl>/dev/null); then
+    mkdir -p ~/.config/systemd/user
+    rm -f ~/.config/systemd/user/claude-autosync.service ~/.config/systemd/user/claude-autosync.timer
+    ln -s ~/dotfiles/claude/systemd/claude-autosync.service ~/.config/systemd/user/claude-autosync.service
+    ln -s ~/dotfiles/claude/systemd/claude-autosync.timer ~/.config/systemd/user/claude-autosync.timer
+    systemctl --user daemon-reload
+    systemctl --user enable --now claude-autosync.timer
+fi
