@@ -20,12 +20,3 @@ done
 ln -s ~/dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md
 ln -s ~/dotfiles/claude/skills ~/.claude/skills
 
-#Auto-commit and push changes via systemd user timer
-if (which systemctl>/dev/null); then
-    mkdir -p ~/.config/systemd/user
-    rm -f ~/.config/systemd/user/claude-autosync.service ~/.config/systemd/user/claude-autosync.timer
-    ln -s ~/dotfiles/claude/systemd/claude-autosync.service ~/.config/systemd/user/claude-autosync.service
-    ln -s ~/dotfiles/claude/systemd/claude-autosync.timer ~/.config/systemd/user/claude-autosync.timer
-    systemctl --user daemon-reload
-    systemctl --user enable --now claude-autosync.timer
-fi

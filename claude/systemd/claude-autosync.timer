@@ -1,9 +1,0 @@
-[Unit]
-Description=Check ~/dotfiles/claude for changes every 2 minutes
-
-[Timer]
-OnBootSec=1min
-OnUnitActiveSec=2min
-
-[Install]
-WantedBy=timers.target

@@ -1,28 +1,31 @@
 #!/bin/bash
-#Commit and push changes in ~/dotfiles/claude automatically.
+#Commit and push changes in ~/dotfiles/claude.
+#Usage: sync "message" – the message is prefixed with "claude: ".
 #Commits to main when main is clean and up to date, otherwise to the branch claude-sync.
 
 REPO=~/dotfiles
 DIR=claude
 BRANCH=claude-sync
+PREFIX="claude: "
 
 cd "$REPO" || exit 1
+
+msg="$PREFIX${1:-update}"
 
 #Nothing to do if claude/ is unchanged and nothing is waiting to be pushed
 git fetch -q origin 2>/dev/null
 changes=$(git status --porcelain -- "$DIR")
-#Only own auto-sync commits are retried, never other unpushed work on main
-unpushed_main=$(git log --format=%s origin/main..main 2>/dev/null | grep '^claude: auto-sync')
-foreign_main=$(git log --format=%s origin/main..main 2>/dev/null | grep -v '^claude: auto-sync')
+#Only own commits are retried, never other unpushed work on main
+unpushed_main=$(git log --format=%s origin/main..main 2>/dev/null | grep "^$PREFIX")
+foreign_main=$(git log --format=%s origin/main..main 2>/dev/null | grep -v "^$PREFIX")
 unpushed_branch=""
 if git rev-parse -q --verify "refs/heads/$BRANCH" >/dev/null; then
     unpushed_branch=$(git rev-list "origin/$BRANCH..$BRANCH" 2>/dev/null || echo new)
 fi
 if [ -z "$changes" ] && [ -z "$unpushed_main" ] && [ -z "$unpushed_branch" ]; then
+    echo "Nothing to sync"
     exit 0
 fi
-
-msg="claude: auto-sync $(date '+%Y-%m-%d %H:%M')"
 
 #main is clean: checked out, no changes outside claude/, not behind origin, no foreign unpushed commits
 other=$(git status --porcelain | grep -v " $DIR/")
@@ -32,10 +35,11 @@ current=$(git symbolic-ref --short -q HEAD)
 if [ "$current" = "main" ] && [ -z "$other" ] && [ -z "$behind" ] && [ -z "$foreign_main" ]; then
     if [ -n "$changes" ]; then
         git add -A -- "$DIR"
-        git commit -q -m "$msg" -- "$DIR"
+        git commit -q -m "$msg" -- "$DIR" || exit 1
     fi
-    git push -q origin main
-    exit $?
+    git push -q origin main || exit 1
+    echo "Committed and pushed to main"
+    exit 0
 fi
 
 #Otherwise commit claude/ onto the branch without touching the working tree or index
@@ -52,7 +56,8 @@ if [ -n "$changes" ]; then
     if [ "$tree" != "$(git rev-parse "$parent^{tree}")" ]; then
         commit=$(git commit-tree "$tree" -p "$parent" -m "$msg")
         git update-ref "refs/heads/$BRANCH" "$commit"
-        notify-send "dotfiles" "main ist nicht sauber – Claude-Änderungen auf Branch $BRANCH committed" 2>/dev/null
     fi
 fi
-git push -q origin "$BRANCH"
+git push -q origin "$BRANCH" || exit 1
+echo "main is not clean – committed and pushed to branch $BRANCH"
+echo "Reason:${other:+ changes outside $DIR/;}${behind:+ main behind origin;}${foreign_main:+ unpushed commits on main;}$([ "$current" != main ] && echo " $current checked out")"
