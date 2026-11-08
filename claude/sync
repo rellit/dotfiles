@@ -58,6 +58,11 @@ if [ -n "$changes" ]; then
         git update-ref "refs/heads/$BRANCH" "$commit"
     fi
 fi
-git push -q origin "$BRANCH" || exit 1
-echo "main is not clean – committed and pushed to branch $BRANCH"
+if [ -n "$commit" ] || [ -n "$unpushed_branch" ]; then
+    git push -q origin "$BRANCH" || exit 1
+    echo "main is not clean – committed and pushed to branch $BRANCH"
+else
+    echo "Nothing new – $BRANCH is up to date"
+    exit 0
+fi
 echo "Reason:${other:+ changes outside $DIR/;}${behind:+ main behind origin;}${foreign_main:+ unpushed commits on main;}$([ "$current" != main ] && echo " $current checked out")"
