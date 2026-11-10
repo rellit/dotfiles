@@ -184,6 +184,9 @@ mit Anti-Aliasing in jeder Größe:
   `-- <dir> <de|en> store` → 1080×1920 (Play nimmt nichts länger als 2:1). Braucht Display.
 - `python3 tools/generate_store_assets.py [--skip-capture]` → `build/store/`: `icon_512.png`, je Sprache
   `feature_graphic.png` (1024×500, ohne Alpha) und beschriftete `phone_NN_*.png`; Texte in `SHOTS`.
+- **`build/.gdignore` ist Pflicht** (legen `build_android.sh` und `generate_store_assets.py` an): sonst
+  importiert Godot die Screenshots/Store-PNGs als Ressourcen und packt sie ins APK/AAB. Prüfen:
+  `unzip -l build/*.apk | grep -E "build/|\.ctex"` darf nichts liefern.
 - `build/store/listing.md`: Play-Eintrag de/en (Titel ≤30, Kurzbeschreibung ≤80, Beschreibung),
   Datenschutz `https://__SLUG__.rellit.de/datenschutz-app` (EN `/en/app-privacy`), Kontakt mail@timhaller.de,
   „komplett offline, keine Berechtigungen“.
@@ -196,7 +199,7 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
 - **Zwei Export-Presets**: `Android` (APK, `gradle_build/use_gradle_build=false`) und `Android AAB`
   (`use_gradle_build=true`, `export_format=1`). Beide mit gleichem `version/code`, `version/name=""`,
   `package/unique_name="de.timhaller.__SLUG__"`, `package/signed=true`, adaptiven Icons,
-  `exclude_filter="tests/*, tools/*, extension_api.json, keystore.properties, keystore.properties.example"`.
+  `exclude_filter="build/*, tests/*, tools/*, extension_api.json, keystore.properties, keystore.properties.example"`.
 - **Keystore einmalig**: `tools/android/create_keystore.sh` → `~/.android-keystores/__SLUG__-release.keystore`
   (PKCS12, RSA 4096, 10000 Tage, ein Passwort) und `keystore.properties` (mode 600, git-ignored) mit
   `storeFile`, `storePassword`, `keyAlias`. Überschreibt nie einen vorhandenen Keystore.

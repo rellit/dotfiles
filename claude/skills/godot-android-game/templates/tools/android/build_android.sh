@@ -85,6 +85,8 @@ fi
 
 OUT="$ROOT/build/__SLUG__-${VERSION_NAME}-${VERSION_CODE}-${MODE}.${FORMAT}"
 mkdir -p "$ROOT/build"
+# Keeps Godot from importing (and exporting) anything that lands in build/
+touch "$ROOT/build/.gdignore"
 
 # ---- signing
 if [[ "$MODE" == "release" ]]; then
