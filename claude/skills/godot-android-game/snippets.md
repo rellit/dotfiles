@@ -69,6 +69,8 @@ func go_back() -> void:
 		licenses_overlay.hide()
 	elif changelog_overlay.visible:
 		changelog_overlay.hide()
+	elif imprint_overlay.visible:
+		imprint_overlay.hide()
 	elif help_overlay.visible:
 		help_overlay.hide()
 	elif settings_overlay.visible:
@@ -164,10 +166,32 @@ static func _day_text(iso_date: String) -> String:
 	return "%s.%s.%s" % [p[2], p[1], p[0]]
 ```
 
-## Lizenzen
+## About, Impressum, Datenschutz, Lizenzen
 
 ```gdscript
 const FONT_LICENSE_PATH := "res://assets/fonts/OFL-Orbitron.txt"
+const WEBSITE := "https://__SLUG__.rellit.de"
+
+func open_about() -> void:
+	about_privacy_link.uri = privacy_url()
+	about_overlay.show()
+
+# The privacy policy for the app on the website, German or English like the UI
+static func privacy_url() -> String:
+	return WEBSITE + ("/datenschutz-app" if TranslationServer.get_locale().begins_with("de") else "/en/app-privacy")
+
+func open_imprint() -> void:
+	imprint_text.text = imprint_text_for_locale()
+	imprint_overlay.show()
+
+# Provider details required by § 5 DDG; kept in the app so they are there offline, too
+static func imprint_text_for_locale() -> String:
+	return "\n".join([TranslationServer.translate("Information pursuant to § 5 DDG"), "",
+		"Tim Haller", "Beethovenstraße 9", "64347 Griesheim", TranslationServer.translate("Germany"), "",
+		TranslationServer.translate("Contact")])
+# de.po: "Legal notice"/"LEGAL NOTICE" → Impressum/IMPRESSUM, "Information pursuant to § 5 DDG" →
+# "Angaben gemäß § 5 DDG", "Germany" → Deutschland, "Contact" → Kontakt, "Privacy policy" → Datenschutzerklärung
+
 
 # Everything the licences of the shipped components ask to be reproduced: Godot's own MIT
 # licence, the copyright notices and licence texts of the third-party code inside the engine

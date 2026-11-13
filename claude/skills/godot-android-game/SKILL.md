@@ -111,10 +111,23 @@ Dialoge sind Overlays in `game.tscn`, gehen mit kurzem Pop-in auf, jeder Button 
   Öffnen** neu (aktuelle Sprache). Zahlen aus den Regelkonstanten einsetzen, nicht hart codieren.
 - Öffnet sich beim allerersten Start/Spiel von selbst (`help_seen` in `settings.cfg`), sonst über Menü und `?`.
 
-## 8. About, Credits, Changelog, Lizenzen – Pflicht
+## 8. About, Credits, Changelog, Lizenzen, Impressum, Datenschutz – Pflicht
 
 About-Dialog: Name, `Version %s` aus `ProjectSettings.get_setting("application/config/version")`,
-`© <Jahr> Tim Haller`, Link auf die Website, Credits (Schrift, Godot), Buttons **Changelog** und **Licenses**.
+`© <Jahr> Tim Haller`, Link auf die Website, Link **Privacy policy**, Credits (Schrift, Godot),
+Buttons **Changelog**, **Licenses** und **Legal notice**.
+
+**Impressum und Datenschutz** (EU: höchstens 2 Klicks vom Startbildschirm, also Menü → About → …)
+- **Legal notice** öffnet ein eigenes Overlay (`ImprintOverlay`), damit es offline lesbar ist:
+  Titel „LEGAL NOTICE“ (de „IMPRESSUM“), Text aus `imprint_text_for_locale()` (siehe snippets.md:
+  Angaben gemäß § 5 DDG, Tim Haller, Beethovenstraße 9, 64347 Griesheim, Deutschland, Kontakt),
+  darunter `LinkButton` `mail@timhaller.de` (`mailto:`) und `rellit.de/impressum`
+  (`https://rellit.de/impressum`, das volle Impressum). Bewusst schlank: kein OS-Link (Plattform seit
+  20.07.2025 abgeschaltet), kein MStV-Absatz, kein VSBG-Hinweis (Pflicht erst ab 10 Beschäftigten).
+- **Privacy policy**: `LinkButton` im About-Dialog, `uri = privacy_url()` beim Öffnen gesetzt:
+  `__SLUG__.rellit.de/datenschutz-app` bei deutscher UI, sonst `/en/app-privacy`. Die Seiten liegen im rellit.de-Repo.
+- Zurück/Esc schließt das Impressum vor dem About-Dialog; in `_dialog_open()` aufnehmen.
+- Test: Link-URIs je Sprache, Impressum öffnet aus About mit Adresse, Zurück lässt About offen, deutscher Text.
 
 **Changelog**
 - `GameController.changelog_entries()` (static), neueste zuerst:
