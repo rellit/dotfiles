@@ -121,7 +121,7 @@ Buttons **Changelog**, **Licenses** und **Legal notice**.
 - **Legal notice** öffnet ein eigenes Overlay (`ImprintOverlay`), damit es offline lesbar ist:
   Titel „LEGAL NOTICE“ (de „IMPRESSUM“), Text aus `imprint_text_for_locale()` (siehe snippets.md:
   Angaben gemäß § 5 DDG, Tim Haller, Beethovenstraße 9, 64347 Griesheim, Deutschland, Kontakt),
-  darunter `LinkButton` `mail@timhaller.de` (`mailto:`) und `rellit.de/impressum`
+  darunter `LinkButton` `support@rellit.de` (`mailto:`) und `rellit.de/impressum`
   (`https://rellit.de/impressum`, das volle Impressum). Bewusst schlank: kein OS-Link (Plattform seit
   20.07.2025 abgeschaltet), kein MStV-Absatz, kein VSBG-Hinweis (Pflicht erst ab 10 Beschäftigten).
 - **Privacy policy**: `LinkButton` im About-Dialog, `uri = privacy_url()` beim Öffnen gesetzt:
