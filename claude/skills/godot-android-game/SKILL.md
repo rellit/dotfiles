@@ -221,7 +221,9 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
   [--version-name X] [--skip-tests] [--install]`. Ablauf: Tests → `--import` → Export nach
   `build/__SLUG__-<version>-<code>-<mode>.<apk|aab>` → Signatur prüfen und mit Release-Key vergleichen
   (sonst Datei löschen und Fehler). Für AAB installiert das Skript bei Bedarf das Android-Build-Template
-  nach `android/` (git-ignored, Version in `android/.build_version`).
+  nach `android/` (git-ignored, Version in `android/.build_version`). In `.gitignore` steht dafür
+  **`/android/`** mit Schrägstrich vorn – ein bloßes `android/` trifft auch `tools/android/`, und die
+  Build-Skripte landen nie in Git (Prüfen: `git check-ignore -v tools/android/build_android.sh`).
 - Signierwerte: `keystore.properties` > Umgebungsvariablen `__ENV___KEYSTORE`, `__ENV___KEYSTORE_PASSWORD`,
   `__ENV___KEY_ALIAS` > Passwortabfrage. Übergabe an Godot über `GODOT_ANDROID_KEYSTORE_RELEASE_*`.
 - Voraussetzungen: Godot 4.7 Export-Templates, Android SDK (`~/Android/Sdk` oder `ANDROID_HOME`), JDK 17.
