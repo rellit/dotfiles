@@ -219,6 +219,129 @@ static func license_text() -> String:
 	return "\n\n".join(parts)
 ```
 
+## Vibration als Medienvibration
+
+`scripts/MediaVibrator.gd` (aus Kawaii Bakery, auf Emulator API 35 geprüft: `usage: MEDIA`). Dazu
+`permissions/vibrate=true` in beiden Presets.
+
+```gdscript
+class_name MediaVibrator
+extends RefCounted
+
+# Vibrates as media vibration, not as touch feedback (Android only; used by SoundManager).
+#
+# Godot's Input.vibrate_handheld() calls Vibrator.vibrate(VibrationEffect) without attributes.
+# Since Android 13 such a buzz is filed under touch feedback, and wherever the player has
+# switched off "touch vibration" (or the system decides so in some modes) it never happens.
+# Media vibration follows the media/vibration settings instead, like the buzz of a game should.
+# So the Vibrator is called here directly through JavaClassWrapper, with
+# VibrationAttributes.USAGE_MEDIA (Android 13+). Older Android has no such split; there it
+# vibrates without attributes. If anything on the Java side fails, it falls back to Godot's call.
+#
+# Needs the VIBRATE permission in the export presets, like Godot's own call.
+
+const USAGE_MEDIA := 19  # VibrationAttributes.USAGE_MEDIA (0x13)
+const API_VIBRATION_ATTRIBUTES := 33
+
+var _set_up := false
+var _failed := false
+var _vibrator: Object = null
+var _effects: Object = null
+var _attributes: Object = null
+
+
+# True if the buzz went out through the media path; false = caller should fall back
+func vibrate(milliseconds: int) -> bool:
+	if _failed or not _setup():
+		return false
+	var effect: Object = _effects.createOneShot(milliseconds, -1)  # DEFAULT_AMPLITUDE
+	if effect == null or _exception():
+		return _fail("could not create the vibration effect")
+	if _attributes != null:
+		_vibrator.vibrate(effect, _attributes)
+	else:
+		_vibrator.vibrate(effect)
+	if _exception():
+		return _fail("Vibrator.vibrate failed")
+	return true
+
+
+func _setup() -> bool:
+	if _set_up:
+		return true
+	if not OS.has_feature("android") or not Engine.has_singleton("AndroidRuntime"):
+		return _fail("not on Android")
+	var runtime: Object = Engine.get_singleton("AndroidRuntime")
+	var context: Object = runtime.getApplicationContext()
+	_vibrator = context.getSystemService("vibrator") if context != null else null
+	if _vibrator == null or _exception() or not _vibrator.hasVibrator():
+		return _fail("no vibrator")
+	_effects = JavaClassWrapper.wrap("android.os.VibrationEffect")
+	if _effects == null or _exception():
+		return _fail("no VibrationEffect")
+	if _api_level() >= API_VIBRATION_ATTRIBUTES:
+		var attributes: Object = JavaClassWrapper.wrap("android.os.VibrationAttributes")
+		if attributes != null:
+			_attributes = attributes.createForUsage(USAGE_MEDIA)
+		if _attributes == null or _exception():
+			return _fail("no VibrationAttributes")
+	_set_up = true
+	return true
+
+
+# Build.VERSION.SDK_INT; if the field cannot be read, from the release number (13 = API 33)
+static func _api_level() -> int:
+	var version: Object = JavaClassWrapper.wrap("android.os.Build$VERSION")
+	var sdk: Variant = version.get("SDK_INT") if version != null else null
+	if sdk != null:
+		return int(sdk)
+	var release := OS.get_version().get_slice(".", 0)
+	return int(release) + 20 if release.is_valid_int() and int(release) >= 10 else 0
+
+
+func _exception() -> bool:
+	var exception: Variant = JavaClassWrapper.get_exception()
+	if exception != null:
+		push_warning("MediaVibrator: %s" % str(exception))
+		return true
+	return false
+
+
+func _fail(reason: String) -> bool:
+	if not _failed:
+		print("MediaVibrator: %s, using Input.vibrate_handheld()" % reason)
+	_failed = true
+	return false
+```
+
+Im SoundManager:
+
+```gdscript
+signal vibrated(milliseconds: int)
+var vibration_enabled := true
+var _media_vibrator := MediaVibrator.new()
+
+func vibrate(milliseconds: int) -> void:
+	if not vibration_enabled or milliseconds <= 0:
+		return
+	vibrated.emit(milliseconds)
+	if not OS.has_feature("mobile"):
+		return
+	# As media vibration, not touch feedback (which many players have switched off)
+	if not _media_vibrator.vibrate(milliseconds):
+		Input.vibrate_handheld(milliseconds)
+```
+
+Test der Presets (`test_audio.gd`):
+
+```gdscript
+var presets := ConfigFile.new()
+presets.load("res://export_presets.cfg")
+for section: String in presets.get_sections():
+	if section.ends_with(".options") and presets.get_value(section.trim_suffix(".options"), "platform", "") == "Android":
+		check(presets.get_value(section, "permissions/vibrate", false) == true, "%s asks for VIBRATE" % section)
+```
+
 ## Test-Gerüst
 
 ```gdscript

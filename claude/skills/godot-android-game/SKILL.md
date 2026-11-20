@@ -62,7 +62,8 @@ build/                             # Ausgabe, git-ignored
 - Hintergrundfarbe des Spiels = `default_clear_color` = `boot_splash/bg_color`.
 - Schrift: Orbitron (SIL OFL) als `gui/theme/custom_font`, Lizenz in `assets/fonts/OFL-*.txt`,
   per `include_filter` mit exportiert.
-- Keine Android-Berechtigungen, auch kein INTERNET. Links öffnet der System-Browser (`LinkButton`).
+- Keine Android-Berechtigungen, auch kein INTERNET (Ausnahme: `VIBRATE`, wenn das Spiel vibriert, siehe 9).
+  Links öffnet der System-Browser (`LinkButton`).
 
 ## 3. Architektur
 
@@ -157,6 +158,18 @@ Erst beim ersten Öffnen zusammenbauen (mehrere 100 KB). Rechtstexte bleiben eng
 - Jede Spieleraktion und jedes Ereignis hat einen Sound, zeitlich auf den Animationsschritt gelegt;
   dazu Jingles für Sieg/Niederlage/Highscore/Spielende und `UI_CLICK` für alle Buttons.
 - Test `test_audio.gd`: Assets geladen und Loops, Lautstärken, Speichern/Laden, Trackwechsel, Dialog.
+- **Vibration** (optional, dann eigener Schalter in den Einstellungen, `audio/vibration`): zwei Fallen
+  (aus Shikaku gelernt, in Kawaii Bakery umgesetzt):
+  1. **`permissions/vibrate=true` in beiden Presets.** Fehlt es, verwirft Android jedes Brummen ohne
+     Meldung – Desktop und Tests merken nichts. `test_audio.gd` prüft beide Presets; VIBRATE gehört dann
+     auch in die Berechtigungsliste der App-Datenschutzerklärung.
+  2. **Als Medienvibration, nicht `Input.vibrate_handheld()`.** Godot ruft `Vibrator.vibrate(VibrationEffect)`
+     ohne Attribute; ab Android 13 zählt das als Berührungs-Feedback und fällt weg, wo das abgeschaltet
+     ist. Stattdessen `MediaVibrator.gd` (snippets.md): über `JavaClassWrapper` mit
+     `VibrationAttributes.USAGE_MEDIA`, Godots Aufruf nur als Rückfall.
+  Dauer ≥ 20 ms (kürzer läuft bei vielen Motoren nicht an). SoundManager meldet jede Vibration per
+  Signal (`vibrated(ms)`), damit Tests sie ohne Gerät sehen. Prüfen auf Gerät/Emulator:
+  `adb shell dumpsys vibrator_manager` → „Recent vibrations“ muss `usage: MEDIA` zeigen.
 
 ## 10. App-Icon und Splash – Pflicht
 
