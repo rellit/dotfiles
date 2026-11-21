@@ -24,12 +24,13 @@ Projektname-Schema, überall gleich verwenden:
 
 ```bash
 S=~/.claude/skills/godot-android-game/templates
-cp -r $S/tools $S/run_desktop.sh $S/keystore.properties.example $S/export_presets.cfg .
+cp -r $S/tools $S/addons $S/run_desktop.sh $S/keystore.properties.example $S/export_presets.cfg .
 cp $S/gitignore .gitignore
 find tools run_desktop.sh keystore.properties.example export_presets.cfg -type f -exec sed -i \
   -e 's/__NAME__/Orbitrio/g' -e 's/__SLUG__/orbitrio/g' -e 's/__ENV__/ORBITRIO/g' {} +
 ```
-`templates/project.godot.part` enthält die `[application]`…`[rendering]`-Abschnitte für `project.godot`.
+`templates/project.godot.part` enthält die `[application]`…`[rendering]`-Abschnitte für `project.godot`
+(inkl. `[editor_plugins]` mit `addons/portrait_optional`, siehe 2).
 Danach im Projekt eine `CLAUDE.md` anlegen (Vorlage: Abschnitt 16).
 
 Struktur:
@@ -54,6 +55,14 @@ build/                             # Ausgabe, git-ignored
 
 - Godot 4.7, Renderer **GL Compatibility** (auch mobil), Hochformat 720×1280,
   `stretch/mode="canvas_items"`, `aspect="expand"`, `handheld/orientation=1`.
+- **Hochformat-Sperre braucht `addons/portrait_optional`** (Vorlage `templates/addons/portrait_optional/`,
+  in `[editor_plugins]` aktiviert): Aus `orientation=1` macht Godot `android:screenOrientation="portrait"`,
+  und Google Play liest daraus die *Pflicht*-Hardware `android.hardware.screen.portrait` – der Release
+  wird abgelehnt („Erklärungen zu erforderlichen Hardwarefunktionen schränken die Verfügbarkeit deiner
+  App ein“, Orbitrio 1.2.0). Das Export-Plugin setzt
+  `<uses-feature android:name="android.hardware.screen.portrait" android:required="false" />`.
+  Godot hat dafür keine Export-Option, und `android/` wird mit jedem Build-Template neu erzeugt –
+  den Manifest dort von Hand zu ändern, hält nicht. Das Plugin wirkt nur in Gradle-Builds (AAB immer).
 - `pointing/emulate_touch_from_mouse=true`; Spielfeld-Eingabe nur über `InputEventScreenTouch`
   auswerten (sonst kommt jeder Tap doppelt an).
 - `application/config/quit_on_go_back=false` – das Spiel behandelt die Android-Zurück-Taste selbst.
@@ -241,6 +250,9 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
   `__ENV___KEY_ALIAS` > Passwortabfrage. Übergabe an Godot über `GODOT_ANDROID_KEYSTORE_RELEASE_*`.
 - Voraussetzungen: Godot 4.7 Export-Templates, Android SDK (`~/Android/Sdk` oder `ANDROID_HOME`), JDK 17.
 - Play Console: Play App Signing, dieser Key ist der Upload-Key. Neue Apps nur als AAB.
+- Manifest prüfen (nach einem AAB-Build): `grep -A1 screen.portrait android/build/build/intermediates/bundle_manifest/*/*/AndroidManifest.xml`
+  muss `android:required="false"` zeigen. Fehlt der Eintrag, ist `addons/portrait_optional` nicht da oder
+  nicht in `[editor_plugins]` aktiviert (siehe 2) – Play lehnt den Release dann ab.
 - Passwörter nie ausgeben, nie committen, nie in Logs schreiben.
 
 ## 15. Release-Checkliste (bei jedem Versionssprung)
@@ -250,6 +262,7 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
 3. Alle neuen Texte in `locale/de.po`.
 4. README aktualisieren (Features, Steuerung, Dateien).
 5. Tests grün; `tools/android/build_android.sh release --aab --bump` (erhöht `version/code` in beiden Presets).
+   Danach im Merged Manifest `screen.portrait` mit `required="false"` prüfen (siehe 14).
 6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen.
 7. Commit `Version X.Y.Z: <Kurzfassung>` (nur wenn der Nutzer committen lässt).
 
