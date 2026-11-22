@@ -1,0 +1,8 @@
+# Shared SSH client settings for Arch and Ubuntu/WSL.
+# ssh/bootstrap puts "Include ~/dotfiles/ssh/config" at the top of ~/.ssh/config,
+# host entries stay in ~/.ssh/config.
+
+# Load a key into the agent on its first use: the passphrase is asked once,
+# afterwards every ssh/git call in every shell gets the key from the agent.
+# The agent itself is set up in ~/.zshrc.
+AddKeysToAgent yes

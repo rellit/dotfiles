@@ -1,22 +1,37 @@
 #!/bin/bash
 
 #Update Packages & Install Zsh and Plugins
-if (which apt-get>/dev/null); then
+if command -v apt-get >/dev/null; then
     sudo apt-get update -y
     sudo apt-get upgrade -y
-    sudo apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions keychain -y
-elif (which pacman>/dev/null); then
-    sudo pacman -Sy zsh zsh-syntax-highlighting zsh-autosuggestions keychain
+    sudo apt-get install zsh zsh-syntax-highlighting zsh-autosuggestions -y
+elif command -v pacman >/dev/null; then
+    sudo pacman -Syu --needed zsh zsh-syntax-highlighting zsh-autosuggestions
 fi
 
-chsh -s /usr/bin/zsh
+#SSH: keys are loaded on first use, the zshrc only provides the agent
+~/dotfiles/ssh/bootstrap
 
-#Install powerlevel10k
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/dotfiles/zsh/powerlevel10k
+#Use zsh as login shell
+if [ "$(getent passwd "$USER" | cut -d: -f7)" != "/usr/bin/zsh" ]; then
+    chsh -s /usr/bin/zsh
+fi
 
-#Remove existing symlinks
-rm -f ~/.zshrc
-rm -f ~/.p10k.zsh
+#Install or update powerlevel10k
+if [ -d ~/dotfiles/zsh/powerlevel10k/.git ]; then
+    git -C ~/dotfiles/zsh/powerlevel10k pull --ff-only
+else
+    git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ~/dotfiles/zsh/powerlevel10k
+fi
+
+#Remove existing symlinks, keep real files as .bak
+for f in ~/.zshrc ~/.p10k.zsh; do
+    if [ -L "$f" ]; then
+        rm -f "$f"
+    elif [ -e "$f" ]; then
+        mv "$f" "$f.bak"
+    fi
+done
 
 #Create symlinks
 ln -s ~/dotfiles/zsh/.zshrc ~/.zshrc

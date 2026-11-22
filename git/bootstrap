@@ -1,16 +1,23 @@
 #!/bin/bash
 
-#Add Git PPA
-if (which apt-get>/dev/null); then
+#Install Git (Ubuntu: newest version from the Git PPA)
+if command -v apt-get >/dev/null; then
     sudo add-apt-repository ppa:git-core/ppa -y
-    sudo apt update -y
-    sudo apt install git keychain -y
-elif (which pacman>/dev/null); then
-    pacman -Sy git keychain
+    sudo apt-get update -y
+    sudo apt-get install git -y
+elif command -v pacman >/dev/null; then
+    sudo pacman -S --needed git
 fi
 
-#Remove symlinks
-rm -f ~/.gitconfig
+#SSH: keys are loaded on first use (git push, ...)
+~/dotfiles/ssh/bootstrap
+
+#Remove existing symlink, keep a real file as .bak
+if [ -L ~/.gitconfig ]; then
+    rm -f ~/.gitconfig
+elif [ -e ~/.gitconfig ]; then
+    mv ~/.gitconfig ~/.gitconfig.bak
+fi
 
 #Create symlink
 ln -s ~/dotfiles/git/.gitconfig ~/.gitconfig

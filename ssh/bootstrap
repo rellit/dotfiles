@@ -1,0 +1,27 @@
+#!/bin/bash
+#SSH client: keys are loaded into the agent on first use, not at shell start.
+#The agent itself is set up in ~/.zshrc.
+
+#Install OpenSSH client
+if command -v apt-get >/dev/null; then
+    sudo apt-get install openssh-client -y
+elif command -v pacman >/dev/null; then
+    sudo pacman -S --needed openssh
+fi
+
+mkdir -p ~/.ssh
+chmod 700 ~/.ssh
+touch ~/.ssh/config
+chmod 600 ~/.ssh/config
+
+#Include the shared settings at the top of ~/.ssh/config (only there they apply to
+#every host), the host entries in ~/.ssh/config stay untouched
+INCLUDE="Include ~/dotfiles/ssh/config"
+if ! grep -qxF "$INCLUDE" ~/.ssh/config; then
+    content=$(cat ~/.ssh/config)
+    if [ -n "$content" ]; then
+        printf '%s\n\n%s\n' "$INCLUDE" "$content" > ~/.ssh/config
+    else
+        printf '%s\n' "$INCLUDE" > ~/.ssh/config
+    fi
+fi
