@@ -46,7 +46,7 @@ scripts/help_*.gd                  # Bildchen für How to play
 locale/de.po
 assets/{icon,splash,fonts,audio/music,audio/sfx}/
 tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd
-tools/android/build_android.sh  create_keystore.sh
+tools/android/build_android.sh  create_keystore.sh  GodotApp.java
 tests/test_*.gd                    # headless, extends SceneTree
 build/                             # Ausgabe, git-ignored
 ```
@@ -228,7 +228,7 @@ mit Anti-Aliasing in jeder Größe:
 
 ## 14. Android-Build und Signierung – Pflicht
 
-Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `templates/keystore.properties.example`,
+Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh,GodotApp.java}`, `templates/keystore.properties.example`,
 `templates/export_presets.cfg`, `templates/gitignore`.
 
 - **Zwei Export-Presets**: `Android` (APK, `gradle_build/use_gradle_build=false`) und `Android AAB`
@@ -242,8 +242,9 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
 - **Build**: `tools/android/build_android.sh [release|debug] [--aab] [--bump] [--version-code N]
   [--version-name X] [--skip-tests] [--install]`. Ablauf: Tests → `--import` → Export nach
   `build/__SLUG__-<version>-<code>-<mode>.<apk|aab>` → Signatur prüfen und mit Release-Key vergleichen
-  (sonst Datei löschen und Fehler). Für AAB installiert das Skript bei Bedarf das Android-Build-Template
-  nach `android/` (git-ignored, Version in `android/.build_version`). In `.gitignore` steht dafür
+  (sonst Datei löschen und Fehler). Für Gradle-Presets (das AAB immer) installiert das Skript bei Bedarf
+  das Android-Build-Template nach `android/` (git-ignored, Version in `android/.build_version`), in einem
+  eigenen ersten Export, der verworfen wird. In `.gitignore` steht dafür
   **`/android/`** mit Schrägstrich vorn – ein bloßes `android/` trifft auch `tools/android/`, und die
   Build-Skripte landen nie in Git (Prüfen: `git check-ignore -v tools/android/build_android.sh`).
 - Signierwerte: `keystore.properties` > Umgebungsvariablen `__ENV___KEYSTORE`, `__ENV___KEYSTORE_PASSWORD`,
@@ -253,6 +254,46 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh}`, `temp
 - Manifest prüfen (nach einem AAB-Build): `grep -A1 screen.portrait android/build/build/intermediates/bundle_manifest/*/*/AndroidManifest.xml`
   muss `android:required="false"` zeigen. Fehlt der Eintrag, ist `addons/portrait_optional` nicht da oder
   nicht in `[editor_plugins]` aktiviert (siehe 2) – Play lehnt den Release dann ab.
+- **Eigene Activity `tools/android/GodotApp.java` – Pflicht** (aus Shikaku und Sky Bridge Islands,
+  Nov. 2026). Nach Stunden im Hintergrund kürzt Android den Recent-Task
+  (`finish-imm:recent-task-trimmed`), während der Prozess eingefroren bleibt. Das `onDestroy` kommt erst
+  beim nächsten Tippen aufs Icon an, während die neue Activity im selben Prozess startet. Godot baut die
+  Engine dann im laufenden Prozess ab: Absturz „FORTIFY: pthread_mutex_lock called on a destroyed mutex“
+  in `GodotRenderer.onRenderThreadExiting` (Pixel, Android 17), und wo es nicht abstürzt, killt Godot den
+  Prozess und nimmt die eben gestartete App mit. Spieler sehen: App verschwindet im Splash, der zweite
+  Start klappt. Die Vorlage ist Godots `GodotApp.java` aus dem Build-Template plus `onDestroy()`: bei
+  `isFinishing() && !isChangingConfigurations()` beendet sie den Prozess selbst, bevor Godots Abbau
+  beginnt, im Vordergrund (es läuft gerade ein Start) vorher Neustart über
+  `org.godotengine.godot.utils.ProcessPhoenix.triggerRebirth`. Gespeichert ist beim Pausieren schon (4).
+  - `build_android.sh` kopiert sie vor jedem Gradle-Export nach `android/build/src/main/java/com/godot/game/`
+    und prüft hinterher mit `cmp`. Die erste Zeile `// __NAME__: Godot build template 4.7.2.stable` ist die
+    Versionsmarke: Passt sie nicht zur Godot-Version, bricht das Skript ab. Dann `android/` löschen, im
+    Editor *Projekt → Android-Build-Template installieren*, Godots neue
+    `android/build/src/main/java/com/godot/game/GodotApp.java` mit unserer vergleichen, `onDestroy()`
+    übertragen, Marke anpassen – auch in der Skill-Vorlage.
+  - Nur Gradle-Builds tragen die Activity. Das APK-Preset der Vorlage (`use_gradle_build=false`,
+    vorgebautes Template) läuft mit Godots eigener; das Skript meldet das bei jedem solchen Export.
+    Spieler bekommen das AAB, das ist abgedeckt. Spiele mit Plugins (AdMob, Billing) bauen beide Presets
+    über Gradle.
+  - Prüfen im Emulator, nie gegen das Pixel ohne Seriennummer: AVD `sleeptest` (Android 15) mit
+    `-gpu host`, `export ANDROID_SERIAL=emulator-…`. Debug-Build installieren, App starten, Home, dann
+    `adb shell am start -W -n de.timhaller.__SLUG__/com.godot.game.GodotAppLauncher -f 0x10008000`
+    (NEW_TASK|CLEAR_TASK beendet die alte Activity im laufenden Prozess). Ohne Reparatur ist der Prozess
+    danach weg, mit Reparatur läuft die App in einem neuen Prozess (`adb shell pidof` vorher/nachher).
+    Je nach Timing zeigt logcat „restarting in a new process“ (Neustart über ProcessPhoenix) oder
+    „ending the process instead of tearing Godot down“ und direkt danach vom ActivityManager
+    „Start proc … for top-activity“ (Android startet den anstehenden Start selbst neu) – beides ist
+    richtig (23.11.2026: Kawaii Bakery der erste Weg, die anderen fünf Spiele der zweite).
+  - Bei APK ohne Gradle stattdessen `debug --aab` bauen (Godot lässt Debug-AABs unsigniert, das Skript
+    prüft dort keine Signatur) und mit bundletool `build-apks --mode=universal --aapt2=<build-tools>/aapt2
+    --ks=~/.android/debug.keystore` (Alias `androiddebugkey`, Passwort `android`) in ein APK packen,
+    vorher die App deinstallieren (anderer Debug-Key als Godots). Im Gradle-Cache liegt bundletool nur
+    als Bibliothek: `java -cp … com.android.tools.build.bundletool.BundleToolMain` mit guava,
+    failureaccess, protobuf-java(-util), gson, aapt2-proto, dagger, jakarta.inject-api, javax.inject,
+    jose4j, auto-value-annotations, error_prone_annotations und slf4j-api aus demselben Cache.
+- **Absturzberichte vom Gerät**: `adb -s <serial> shell dumpsys dropbox --print data_app_native_crash`
+  (native Abstürze mit Backtrace; `data_app_crash` für Java-Ausnahmen, `data_app_anr` für Hänger).
+  Warum ein Prozess endete: `adb -s <serial> shell dumpsys activity exit-info de.timhaller.__SLUG__`.
 - Passwörter nie ausgeben, nie committen, nie in Logs schreiben.
 
 ## 15. Release-Checkliste (bei jedem Versionssprung)

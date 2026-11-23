@@ -135,24 +135,58 @@ fi
 step "Importing assets"
 "$GODOT" --headless --path "$ROOT" --import > /dev/null 2>&1 || fail "asset import failed"
 
-export_args=("--export-$MODE" "$APK_PRESET" "$OUT")
-if [[ "$FORMAT" == "aab" ]]; then
-	export_args=("--export-$MODE" "$AAB_PRESET" "$OUT")
+PRESET="$APK_PRESET"
+[[ "$FORMAT" == "apk" ]] || PRESET="$AAB_PRESET"
+export_args=("--export-$MODE" "$PRESET" "$OUT")
+
+export_godot() {
+	rm -f "$OUT" "$OUT.idsig"
+	"$GODOT" --headless --path "$ROOT" "$@" 2>&1 \
+		| grep -vE '^\[ *[0-9]+% \]|^Godot Engine|cannot connect to daemon' || true
+}
+
+# True when the preset builds through Gradle (gradle_build/use_gradle_build in its options)
+preset_uses_gradle() {
+	[[ "$(awk -v want="name=\"$1\"" '$0 == want { found = 1 }
+		found && /^gradle_build\/use_gradle_build=/ { print; exit }' "$PRESET_FILE")" == *=true ]]
+}
+
+# The template's activity is replaced by our own copy (tools/android/GodotApp.java: it ends the
+# process instead of letting Godot tear itself down when Android destroys the activity). Only a
+# Gradle build can carry it; the prebuilt template behind a plain APK always runs Godot's own.
+ACTIVITY_SRC="$ROOT/tools/android/GodotApp.java"
+ACTIVITY_DST="$ROOT/android/build/src/main/java/com/godot/game/GodotApp.java"
+GRADLE=0
+if preset_uses_gradle "$PRESET"; then
+	GRADLE=1
 	# The Gradle build needs Godot's Android build template in android/ (generated, not committed)
 	template_version="$(cat "$ROOT/android/.build_version" 2>/dev/null || true)"
 	godot_version="$("$GODOT" --version | cut -d. -f1-4)"
+	# Our copy is written against one template version; a newer template has to be looked at before
+	# it is overwritten, not silently replaced by an old file
+	activity_version="$(sed -n 's|^// __NAME__: Godot build template ||p' "$ACTIVITY_SRC" | head -1)"
+	[[ "$activity_version" == "$godot_version" ]] || fail "tools/android/GodotApp.java is written for the \
+$activity_version build template, this is Godot $godot_version: compare it with the new template's \
+GodotApp.java, carry onDestroy() over and update its first line"
 	if [[ ! -d "$ROOT/android/build" || "$template_version" != "$godot_version" ]]; then
-		echo "Installing Android build template for $godot_version"
+		# Godot only installs the template as part of an export, so that first export is thrown away:
+		# it was built with the template's own activity
+		step "Installing Android build template for $godot_version"
 		rm -rf "$ROOT/android"
-		export_args=(--install-android-build-template "${export_args[@]}")
+		export_godot --install-android-build-template "${export_args[@]}"
+		[[ -f "$ACTIVITY_DST" ]] || fail "the build template was not installed (see Godot output above)"
 	fi
+	cp "$ACTIVITY_SRC" "$ACTIVITY_DST"
+else
+	echo "NOTE: preset \"$PRESET\" uses Godot's prebuilt template, so this ${FORMAT^^} runs Godot's own" \
+		"activity without tools/android/GodotApp.java (fine for quick tests, not for players)"
 fi
 
 step "Exporting $OUT"
-rm -f "$OUT" "$OUT.idsig"
-"$GODOT" --headless --path "$ROOT" "${export_args[@]}" 2>&1 \
-	| grep -vE '^\[ *[0-9]+% \]|^Godot Engine|cannot connect to daemon' || true
+export_godot "${export_args[@]}"
 [[ -f "$OUT" ]] || fail "export produced no ${FORMAT^^} (see Godot output above)"
+[[ $GRADLE -eq 0 ]] || cmp -s "$ACTIVITY_SRC" "$ACTIVITY_DST" \
+	|| fail "android/ lost tools/android/GodotApp.java during the export"
 
 # ---- verify
 # Fingerprints are compared as lowercase hex without colons; keytool output is forced to English
@@ -164,6 +198,10 @@ if [[ "$FORMAT" == "apk" ]]; then
 	certs="$("$APKSIGNER" verify --verbose --print-certs "$OUT")" || { rm -f "$OUT" "$OUT.idsig"; fail "APK signature does not verify"; }
 	echo "$certs" | grep -E "Verified using v[0-9]|certificate DN|certificate SHA-256" | sed 's/^/  /'
 	actual="$(echo "$certs" | sed -n 's/^.*certificate SHA-256 digest: *//p' | head -1)"
+elif [[ "$MODE" == "debug" ]]; then
+	# Godot leaves debug bundles unsigned; bundletool signs the APKs it builds from one
+	echo "  debug AAB, unsigned (bundletool build-apks signs the APKs made from it)"
+	actual=""
 else
 	# App bundles carry a JAR signature; Play re-signs the APKs it generates with the app signing key
 	jarsigner -J-Duser.language=en -verify "$OUT" | grep -q "jar verified" || { rm -f "$OUT"; fail "AAB signature does not verify"; }
