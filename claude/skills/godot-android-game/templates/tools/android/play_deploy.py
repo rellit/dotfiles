@@ -384,7 +384,11 @@ def hint(error: DeployError) -> str:
         return "This versionCode is already on Google Play: raise it (build_android.sh --bump) and build again."
     if "draft app" in lower:
         return "The app has never been published: the first release goes through the Play Console."
-    if isinstance(error, ApiError) and error.status in (401, 403):
+    if "targeting no countries" in lower:
+        return ("This track has no countries or regions. For production that means the app has not been released "
+            "there yet (still in testing): pick its testing track, e.g. --track alpha, or open production in the Play Console.")
+    if isinstance(error, ApiError) and (error.status == 401 or error.status == 403 and any(
+            word in lower for word in ("permission", "has not been used", "disabled", "unauthorized"))):
         return ("Is the service account invited in the Play Console (Users and permissions) with release rights for "
             "this app, and the Google Play Android Developer API enabled in its Cloud project? New rights can take "
             "a while to arrive.")
