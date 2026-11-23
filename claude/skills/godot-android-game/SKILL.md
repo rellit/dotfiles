@@ -1,0 +1,365 @@
+---
+name: godot-android-game
+description: Tims Standard für Godot-4-Spiele auf Android (Hexmosis, Orbitrio). Laden, sobald ein neues Godot-Spiel angelegt wird oder an einem bestehenden gearbeitet wird – Features, Release/Versionssprung, Android-Build (APK/AAB), Keystore/Signierung, Upload und Prüfung bei Google Play (Play Developer API), Changelog, Credits/About, Lizenzen, Splash, App-Icon, Audio/Musik, How to play, Spielstand fortsetzen (Resume), Übersetzung, Safe Area, Store-Screenshots und Play-Store-Eintrag.
+---
+
+# Godot-Android-Spiele: Entwicklungs-Guide
+
+Abgeleitet aus **Hexmosis** (`~/Entwicklung/hexxagon`) und **Orbitrio** (`~/Entwicklung/numberJoin`).
+Gilt zusätzlich zum eigentlichen Auftrag. Bei Unklarheit gilt: so machen, wie es Orbitrio macht
+(das jüngere Projekt, alle Punkte umgesetzt). Code-Bausteine stehen in [snippets.md](snippets.md),
+Dateivorlagen in `templates/`.
+
+Projektname-Schema, überall gleich verwenden:
+
+| Platzhalter | Bedeutung | Beispiel |
+|---|---|---|
+| `__NAME__` | Anzeigename | `Orbitrio` |
+| `__SLUG__` | klein, Dateinamen/Alias/Subdomain | `orbitrio` |
+| `__ENV__` | Präfix der Umgebungsvariablen | `ORBITRIO` |
+| Package | `de.timhaller.__SLUG__` | `de.timhaller.orbitrio` |
+| Website | `https://__SLUG__.rellit.de` | |
+
+## 1. Neues Projekt anlegen
+
+```bash
+S=~/.claude/skills/godot-android-game/templates
+cp -r $S/tools $S/addons $S/run_desktop.sh $S/keystore.properties.example $S/export_presets.cfg .
+cp $S/gitignore .gitignore
+find tools run_desktop.sh keystore.properties.example export_presets.cfg -type f -exec sed -i \
+  -e 's/__NAME__/Orbitrio/g' -e 's/__SLUG__/orbitrio/g' -e 's/__ENV__/ORBITRIO/g' {} +
+```
+`templates/project.godot.part` enthält die `[application]`…`[rendering]`-Abschnitte für `project.godot`
+(inkl. `[editor_plugins]` mit `addons/portrait_optional`, siehe 2).
+Danach im Projekt eine `CLAUDE.md` anlegen (Vorlage: Abschnitt 16).
+
+Struktur:
+```
+project.godot  export_presets.cfg  run_desktop.sh  README.md  CLAUDE.md
+keystore.properties.example        # committed; keystore.properties ist git-ignored
+scenes/game.tscn                   # eine Szene: Menü, Spiel, alle Overlays
+scripts/<regeln>_state.gd          # Spielregeln ohne UI, to_dict()/from_dict()
+scripts/<x>_view.gd                # Zeichnen, Eingabe, Animation
+scripts/game_controller.gd         # Menü, Dialoge, Speichern, Back, Safe Area
+scripts/sound_manager.gd           # Musik, Effekte, Lautstärken
+scripts/help_*.gd                  # Bildchen für How to play
+locale/de.po
+assets/{icon,splash,fonts,audio/music,audio/sfx}/
+tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd
+tools/android/build_android.sh  create_keystore.sh  GodotApp.java  play_deploy.py
+tests/test_*.gd                    # headless, extends SceneTree
+build/                             # Ausgabe, git-ignored
+```
+
+## 2. Projekt-Grundeinstellungen
+
+- Godot 4.7, Renderer **GL Compatibility** (auch mobil), Hochformat 720×1280,
+  `stretch/mode="canvas_items"`, `aspect="expand"`, `handheld/orientation=1`.
+- **Hochformat-Sperre braucht `addons/portrait_optional`** (Vorlage `templates/addons/portrait_optional/`,
+  in `[editor_plugins]` aktiviert): Aus `orientation=1` macht Godot `android:screenOrientation="portrait"`,
+  und Google Play liest daraus die *Pflicht*-Hardware `android.hardware.screen.portrait` – der Release
+  wird abgelehnt („Erklärungen zu erforderlichen Hardwarefunktionen schränken die Verfügbarkeit deiner
+  App ein“, Orbitrio 1.2.0). Das Export-Plugin setzt
+  `<uses-feature android:name="android.hardware.screen.portrait" android:required="false" />`.
+  Godot hat dafür keine Export-Option, und `android/` wird mit jedem Build-Template neu erzeugt –
+  den Manifest dort von Hand zu ändern, hält nicht. Das Plugin wirkt nur in Gradle-Builds (AAB immer).
+- `pointing/emulate_touch_from_mouse=true`; Spielfeld-Eingabe nur über `InputEventScreenTouch`
+  auswerten (sonst kommt jeder Tap doppelt an).
+- `application/config/quit_on_go_back=false` – das Spiel behandelt die Android-Zurück-Taste selbst.
+- `config/version` in `project.godot` ist die **einzige Quelle** für die sichtbare Version
+  (`version/name=""` in den Export-Presets).
+- Hintergrundfarbe des Spiels = `default_clear_color` = `boot_splash/bg_color`.
+- Schrift: Orbitron (SIL OFL) als `gui/theme/custom_font`, Lizenz in `assets/fonts/OFL-*.txt`,
+  per `include_filter` mit exportiert.
+- Keine Android-Berechtigungen, auch kein INTERNET (Ausnahme: `VIBRATE`, wenn das Spiel vibriert, siehe 9).
+  Links öffnet der System-Browser (`LinkButton`).
+
+## 3. Architektur
+
+- **State** (`*_state.gd`): reine Regeln, Signale für Score/Zug/Game-Over, `to_dict()` / `from_dict()`
+  (bzw. `load_dict()`), die `false` liefern, wenn die Daten nicht passen. Seed-bar für Tests und Screenshots.
+- **View**: zeichnet und animiert; meldet Spieleraktionen per Signal; Animationsschritte als Signal,
+  damit Sounds zum Schritt passen.
+- **Controller**: alles drumherum. Hat `var persist := true` (bzw. leere `save_path`/`settings_path`):
+  Tests und Screenshot-Tool setzen das vor `add_child`, dann wird nichts in `user://` gelesen/geschrieben.
+- Kommentare erklären das *Warum*, Englisch, knapp, Stil wie im Bestandscode.
+
+## 4. Spielstand fortsetzen (Resume) – Pflicht
+
+- Laufendes Spiel nach **jedem Zug** (und beim Spielstart) speichern: `user://savegame.cfg`
+  (ConfigFile) oder `.json` mit `"version"`-Feld. Inhalt: kompletter State inkl. Zufallsgenerator-Zustand,
+  Modus, Stufe, Spielerwahl – so, dass es exakt weitergeht.
+- Zusätzlich in `_notification` bei `NOTIFICATION_WM_CLOSE_REQUEST` und `NOTIFICATION_APPLICATION_PAUSED`
+  speichern (Android killt Apps im Hintergrund) – aber nur, wenn wirklich ein Spiel läuft, sonst kommt
+  ein verlassenes Spiel als CONTINUE zurück.
+- Beim Start: Datei lesen; beschädigt/falsche Version → still löschen. Menü zeigt dann **CONTINUE**.
+- Spiel vorbei oder verlassen → Datei löschen. Wurde die App während des letzten (spielbeendenden)
+  Zugs geschlossen, das Spiel beim Laden als beendet verbuchen.
+- „Neues Spiel“ / „Zum Menü“ während eines laufenden Spiels: Bestätigungsdialog (Hexmosis) oder
+  das Spiel bleibt erhalten und CONTINUE erscheint (Orbitrio). Nie stillschweigend verwerfen.
+- Gegen-KI wartet, solange ein Dialog offen ist (`_dialog_open()`).
+- Tests: Speichern → neue Controller-Instanz → CONTINUE → gleicher Zustand; kaputte Datei wird ignoriert.
+
+## 5. Einstellungen
+
+Alles in **einer** Datei `user://settings.cfg`: Abschnitt `audio` (SoundManager: Musik-/Effekt-Lautstärke,
+Track), Abschnitt `app` (`help_seen`, zuletzt gewählte Stufe …). Beim Schreiben erst `cfg.load()`,
+dann den eigenen Wert setzen, damit andere Abschnitte erhalten bleiben.
+
+## 6. Menü und Dialoge
+
+Menü: **CONTINUE** (nur mit Spielstand) · **NEW GAME** · **HOW TO PLAY** · ggf. **HIGHSCORES** ·
+**SOUND/SETTINGS** · **ABOUT**. Im Spiel eine Leiste mit MENU, `?` (How to play) und `♪`/Zahnrad (Sound).
+Dialoge sind Overlays in `game.tscn`, gehen mit kurzem Pop-in auf, jeder Button spielt `UI_CLICK`.
+
+## 7. How to play – Pflicht
+
+- Scrollbare Seite mit kurzen Abschnitten: Ziel, Bedienung, jede Regel, Punkte, Spielende, Tipps.
+- Zu jeder Regel kleine Bilder, **mit denselben Zeichenroutinen wie das Spiel** gerendert
+  (`help_board.gd`, `help_strip.gd`), keine Screenshots.
+- `help_sections()` liefert `[{title, text, strips/boards}]`; `_build_help()` baut die Seite **bei jedem
+  Öffnen** neu (aktuelle Sprache). Zahlen aus den Regelkonstanten einsetzen, nicht hart codieren.
+- Öffnet sich beim allerersten Start/Spiel von selbst (`help_seen` in `settings.cfg`), sonst über Menü und `?`.
+
+## 8. About, Credits, Changelog, Lizenzen, Impressum, Datenschutz – Pflicht
+
+About-Dialog: Name, `Version %s` aus `ProjectSettings.get_setting("application/config/version")`,
+`© <Jahr> Tim Haller`, Link auf die Website, Link **Privacy policy**, Credits (Schrift, Godot),
+Buttons **Changelog**, **Licenses** und **Legal notice**.
+
+**Impressum und Datenschutz** (EU: höchstens 2 Klicks vom Startbildschirm, also Menü → About → …)
+- **Legal notice** öffnet ein eigenes Overlay (`ImprintOverlay`), damit es offline lesbar ist:
+  Titel „LEGAL NOTICE“ (de „IMPRESSUM“), Text aus `imprint_text_for_locale()` (siehe snippets.md:
+  Angaben gemäß § 5 DDG, Tim Haller, Beethovenstraße 9, 64347 Griesheim, Deutschland, Kontakt),
+  darunter `LinkButton` `support@rellit.de` (`mailto:`) und `rellit.de/impressum`
+  (`https://rellit.de/impressum`, das volle Impressum). Bewusst schlank: kein OS-Link (Plattform seit
+  20.07.2025 abgeschaltet), kein MStV-Absatz, kein VSBG-Hinweis (Pflicht erst ab 10 Beschäftigten).
+- **Privacy policy**: `LinkButton` im About-Dialog, `uri = privacy_url()` beim Öffnen gesetzt:
+  `__SLUG__.rellit.de/datenschutz-app` bei deutscher UI, sonst `/en/app-privacy`. Die Seiten liegen im rellit.de-Repo.
+- Zurück/Esc schließt das Impressum vor dem About-Dialog; in `_dialog_open()` aufnehmen.
+- Test: Link-URIs je Sprache, Impressum öffnet aus About mit Adresse, Zurück lässt About offen, deutscher Text.
+
+**Changelog**
+- `GameController.changelog_entries()` (static), neueste zuerst:
+  `{"version": "1.0.2", "build": 3, "date": "2026-11-07", "changes": [tr("…"), …]}`.
+  `build` = Android-`versionCode` dieses Releases.
+- Darstellung als BBCode im `RichTextLabel`, bei jedem Öffnen neu gebaut; Datum ISO,
+  im Deutschen `TT.MM.JJJJ`.
+- Einträge sind für Spieler geschrieben (was ist neu/anders), nicht für Entwickler; jede Zeile in `de.po`.
+- Test: erster Eintrag == `config/version`, alle Zeilen auf Deutsch übersetzt.
+
+**Licenses**: `license_text()` (siehe snippets.md) – Godot-MIT-Lizenz, Drittkomponenten und Lizenztexte
+direkt aus `Engine.get_license_text()/get_copyright_info()/get_license_info()`, dazu die Font-Lizenz.
+Erst beim ersten Öffnen zusammenbauen (mehrere 100 KB). Rechtstexte bleiben englisch.
+
+## 9. Audio – Pflicht
+
+- `SoundManager` (Node, `PROCESS_MODE_ALWAYS`): 4 wählbare Musik-Loops (`MUSIC_TRACKS` mit Name +
+  preload), Effekte als `enum Sfx` + `STREAMS` + `SFX_VOLUME_DB`, Pool von ~8 `AudioStreamPlayer`,
+  leichte Tonhöhen-Variation, `play(sfx, pitch)`.
+- Musik und Effekte **getrennt** regelbar (Slider 0–100, 0 = „Aus“), Track-Auswahl ◀ ▶;
+  gespeichert in `settings.cfg` (Abschnitt `audio`) mit verzögertem Schreiben (Timer) und `flush_settings()`
+  beim Schließen/Pausieren/Beenden. Nach Loslassen des Effekt-Sliders ein Probe-Sound.
+- Musik leise im Hintergrund (`MUSIC_FULL_DB` ≈ -12 dB), Fade-in beim Start, Crossfade beim Trackwechsel.
+- Alle Sounds **prozedural** erzeugt: `python3 tools/generate_sounds.py` (NumPy + ffmpeg/libvorbis) →
+  `assets/audio/music/*.ogg` (nahtlose Loops, Ring-Puffer, gleiche Lautheit) und `sfx/*.wav`.
+  Danach `godot --headless --import --path .`; Musik-`.import` braucht `loop=true`.
+- Jede Spieleraktion und jedes Ereignis hat einen Sound, zeitlich auf den Animationsschritt gelegt;
+  dazu Jingles für Sieg/Niederlage/Highscore/Spielende und `UI_CLICK` für alle Buttons.
+- Test `test_audio.gd`: Assets geladen und Loops, Lautstärken, Speichern/Laden, Trackwechsel, Dialog.
+- **Vibration** (optional, dann eigener Schalter in den Einstellungen, `audio/vibration`): zwei Fallen
+  (aus Shikaku gelernt, in Kawaii Bakery umgesetzt):
+  1. **`permissions/vibrate=true` in beiden Presets.** Fehlt es, verwirft Android jedes Brummen ohne
+     Meldung – Desktop und Tests merken nichts. `test_audio.gd` prüft beide Presets; VIBRATE gehört dann
+     auch in die Berechtigungsliste der App-Datenschutzerklärung.
+  2. **Als Medienvibration, nicht `Input.vibrate_handheld()`.** Godot ruft `Vibrator.vibrate(VibrationEffect)`
+     ohne Attribute; ab Android 13 zählt das als Berührungs-Feedback und fällt weg, wo das abgeschaltet
+     ist. Stattdessen `MediaVibrator.gd` (snippets.md): über `JavaClassWrapper` mit
+     `VibrationAttributes.USAGE_MEDIA`, Godots Aufruf nur als Rückfall.
+  Dauer ≥ 20 ms (kürzer läuft bei vielen Motoren nicht an). SoundManager meldet jede Vibration per
+  Signal (`vibrated(ms)`), damit Tests sie ohne Gerät sehen. Prüfen auf Gerät/Emulator:
+  `adb shell dumpsys vibrator_manager` → „Recent vibrations“ muss `usage: MEDIA` zeigen.
+
+## 10. App-Icon und Splash – Pflicht
+
+`python3 tools/generate_icon.py` (Pillow + NumPy) zeichnet alles aus Signed-Distance-Funktionen
+mit Anti-Aliasing in jeder Größe:
+- `assets/icon/`: adaptive `icon_foreground_432.png` (Inhalt in der 66-dp-Safe-Zone, vom Skript geprüft),
+  `icon_background_432.png`, `icon_monochrome_432.png` (Android 13 Themed Icon), `icon_192.png`,
+  `icon_512.png` (Play Store), `icon.png` (256 px Fenster).
+- `assets/splash/splash.png`: 1080×1920 transparent, Icon-Motiv + Titel, statt Godot-Logo;
+  `boot_splash/image`, `boot_splash/bg_color` = Spielhintergrund, `stretch_mode=1` (Keep).
+- Das Icon zeigt das Spiel in einem Bild. Store-Grafiken nutzen denselben Hintergrund.
+
+## 11. Sprache
+
+- UI-Texte englisch = msgid; `locale/de.po` mit allen deutschen Texten, `locale/fallback="en"`.
+  Jeder neue `tr()`-Text und jeder Szenentext braucht einen Eintrag.
+- Dynamische Seiten (Help, Changelog, Highscores) bei jedem Öffnen neu bauen. Datumsformat nach Sprache.
+- Tests, die Texte vergleichen, setzen vorher `TranslationServer.set_locale("en")`; ein Test prüft `de_DE`
+  → Deutsch und `fr_FR` → Englisch.
+
+## 12. Mobile-Feinheiten
+
+- **Safe Area**: alle Vollbild-Layouts um `DisplayServer.get_display_safe_area()` einrücken, umgerechnet in
+  Viewport-Pixel, mindestens 24 px oben / 16 px unten auf Mobilgeräten; bei `size_changed` neu anwenden.
+- **Android-Zurück** (`NOTIFICATION_WM_GO_BACK_REQUEST`): oberstes Overlay schließen → vom Spiel ins Menü
+  (mit Bestätigungsmodell: dieselbe Frage wie der MENU-Button) → im Menü beenden. Desktop: `ui_cancel` (Esc)
+  schließt Dialoge. Beides über eine gemeinsame `_close_top_dialog() -> bool`. Test über `go_back()`.
+- Ein Zug, der während einer Animation getippt wird, wird nach deren Ende ausgeführt statt verworfen.
+- `screen/immersive_mode=true`, Architekturen arm64-v8a + x86_64.
+
+## 13. Tests, Screenshots, Store
+
+- Tests: `tests/test_*.gd`, `extends SceneTree`, headless (`godot --headless -s tests/x.gd`), Exit-Code ≠ 0
+  bei Fehler. Regeln, Speichern/Laden, Menüfluss durch die echte Szene (`Engine.time_scale` hoch),
+  About/Changelog/Licenses, Back-Taste, Audio. `build_android.sh` führt alle aus.
+- `tools/capture_screenshots.gd`: echte Szene in SubViewport, fester Seed, Sound stumm, `persist=false`.
+  Standard 1080×2340 (Website, `apps/__SLUG__/public/screens/` im rellit.de-Repo, als WebP);
+  `-- <dir> <de|en> store` → 1080×1920 (Play nimmt nichts länger als 2:1). Braucht Display.
+- `python3 tools/generate_store_assets.py [--skip-capture]` → `build/store/`: `icon_512.png`, je Sprache
+  `feature_graphic.png` (1024×500, ohne Alpha) und beschriftete `phone_NN_*.png`; Texte in `SHOTS`.
+- **`build/.gdignore` ist Pflicht** (legen `build_android.sh` und `generate_store_assets.py` an): sonst
+  importiert Godot die Screenshots/Store-PNGs als Ressourcen und packt sie ins APK/AAB. Prüfen:
+  `unzip -l build/*.apk | grep -E "build/|\.ctex"` darf nichts liefern.
+- `build/store/listing.md`: Play-Eintrag de/en (Titel ≤30, Kurzbeschreibung ≤80, Beschreibung),
+  Datenschutz `https://__SLUG__.rellit.de/datenschutz-app` (EN `/en/app-privacy`), Kontakt mail@timhaller.de,
+  „komplett offline, keine Berechtigungen“.
+
+## 14. Android-Build und Signierung – Pflicht
+
+Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh,GodotApp.java}`, `templates/keystore.properties.example`,
+`templates/export_presets.cfg`, `templates/gitignore`.
+
+- **Zwei Export-Presets**: `Android` (APK, `gradle_build/use_gradle_build=false`) und `Android AAB`
+  (`use_gradle_build=true`, `export_format=1`). Beide mit gleichem `version/code`, `version/name=""`,
+  `package/unique_name="de.timhaller.__SLUG__"`, `package/signed=true`, adaptiven Icons,
+  `exclude_filter="build/*, tests/*, tools/*, extension_api.json, keystore.properties, keystore.properties.example"`.
+- **Keystore einmalig**: `tools/android/create_keystore.sh` → `~/.android-keystores/__SLUG__-release.keystore`
+  (PKCS12, RSA 4096, 10000 Tage, ein Passwort) und `keystore.properties` (mode 600, git-ignored) mit
+  `storeFile`, `storePassword`, `keyAlias`. Überschreibt nie einen vorhandenen Keystore.
+  Nutzer daran erinnern: Keystore + Passwort sichern.
+- **Build**: `tools/android/build_android.sh [release|debug] [--aab] [--bump] [--version-code N]
+  [--version-name X] [--skip-tests] [--install]`. Ablauf: Tests → `--import` → Export nach
+  `build/__SLUG__-<version>-<code>-<mode>.<apk|aab>` → Signatur prüfen und mit Release-Key vergleichen
+  (sonst Datei löschen und Fehler). Für Gradle-Presets (das AAB immer) installiert das Skript bei Bedarf
+  das Android-Build-Template nach `android/` (git-ignored, Version in `android/.build_version`), in einem
+  eigenen ersten Export, der verworfen wird. In `.gitignore` steht dafür
+  **`/android/`** mit Schrägstrich vorn – ein bloßes `android/` trifft auch `tools/android/`, und die
+  Build-Skripte landen nie in Git (Prüfen: `git check-ignore -v tools/android/build_android.sh`).
+- Signierwerte: `keystore.properties` > Umgebungsvariablen `__ENV___KEYSTORE`, `__ENV___KEYSTORE_PASSWORD`,
+  `__ENV___KEY_ALIAS` > Passwortabfrage. Übergabe an Godot über `GODOT_ANDROID_KEYSTORE_RELEASE_*`.
+- Voraussetzungen: Godot 4.7 Export-Templates, Android SDK (`~/Android/Sdk` oder `ANDROID_HOME`), JDK 17.
+- Play Console: Play App Signing, dieser Key ist der Upload-Key. Neue Apps nur als AAB.
+- Manifest prüfen (nach einem AAB-Build): `grep -A1 screen.portrait android/build/build/intermediates/bundle_manifest/*/*/AndroidManifest.xml`
+  muss `android:required="false"` zeigen. Fehlt der Eintrag, ist `addons/portrait_optional` nicht da oder
+  nicht in `[editor_plugins]` aktiviert (siehe 2) – Play lehnt den Release dann ab.
+- **Eigene Activity `tools/android/GodotApp.java` – Pflicht** (aus Shikaku und Sky Bridge Islands,
+  Nov. 2026). Nach Stunden im Hintergrund kürzt Android den Recent-Task
+  (`finish-imm:recent-task-trimmed`), während der Prozess eingefroren bleibt. Das `onDestroy` kommt erst
+  beim nächsten Tippen aufs Icon an, während die neue Activity im selben Prozess startet. Godot baut die
+  Engine dann im laufenden Prozess ab: Absturz „FORTIFY: pthread_mutex_lock called on a destroyed mutex“
+  in `GodotRenderer.onRenderThreadExiting` (Pixel, Android 17), und wo es nicht abstürzt, killt Godot den
+  Prozess und nimmt die eben gestartete App mit. Spieler sehen: App verschwindet im Splash, der zweite
+  Start klappt. Die Vorlage ist Godots `GodotApp.java` aus dem Build-Template plus `onDestroy()`: bei
+  `isFinishing() && !isChangingConfigurations()` beendet sie den Prozess selbst, bevor Godots Abbau
+  beginnt, im Vordergrund (es läuft gerade ein Start) vorher Neustart über
+  `org.godotengine.godot.utils.ProcessPhoenix.triggerRebirth`. Gespeichert ist beim Pausieren schon (4).
+  - `build_android.sh` kopiert sie vor jedem Gradle-Export nach `android/build/src/main/java/com/godot/game/`
+    und prüft hinterher mit `cmp`. Die erste Zeile `// __NAME__: Godot build template 4.7.2.stable` ist die
+    Versionsmarke: Passt sie nicht zur Godot-Version, bricht das Skript ab. Dann `android/` löschen, im
+    Editor *Projekt → Android-Build-Template installieren*, Godots neue
+    `android/build/src/main/java/com/godot/game/GodotApp.java` mit unserer vergleichen, `onDestroy()`
+    übertragen, Marke anpassen – auch in der Skill-Vorlage.
+  - Nur Gradle-Builds tragen die Activity. Das APK-Preset der Vorlage (`use_gradle_build=false`,
+    vorgebautes Template) läuft mit Godots eigener; das Skript meldet das bei jedem solchen Export.
+    Spieler bekommen das AAB, das ist abgedeckt. Spiele mit Plugins (AdMob, Billing) bauen beide Presets
+    über Gradle.
+  - Prüfen im Emulator, nie gegen das Pixel ohne Seriennummer: AVD `sleeptest` (Android 15) mit
+    `-gpu host`, `export ANDROID_SERIAL=emulator-…`. Debug-Build installieren, App starten, Home, dann
+    `adb shell am start -W -n de.timhaller.__SLUG__/com.godot.game.GodotAppLauncher -f 0x10008000`
+    (NEW_TASK|CLEAR_TASK beendet die alte Activity im laufenden Prozess). Ohne Reparatur ist der Prozess
+    danach weg, mit Reparatur läuft die App in einem neuen Prozess (`adb shell pidof` vorher/nachher).
+    Je nach Timing zeigt logcat „restarting in a new process“ (Neustart über ProcessPhoenix) oder
+    „ending the process instead of tearing Godot down“ und direkt danach vom ActivityManager
+    „Start proc … for top-activity“ (Android startet den anstehenden Start selbst neu) – beides ist
+    richtig (23.11.2026: Kawaii Bakery der erste Weg, die anderen fünf Spiele der zweite).
+  - Bei APK ohne Gradle stattdessen `debug --aab` bauen (Godot lässt Debug-AABs unsigniert, das Skript
+    prüft dort keine Signatur) und mit bundletool `build-apks --mode=universal --aapt2=<build-tools>/aapt2
+    --ks=~/.android/debug.keystore` (Alias `androiddebugkey`, Passwort `android`) in ein APK packen,
+    vorher die App deinstallieren (anderer Debug-Key als Godots). Im Gradle-Cache liegt bundletool nur
+    als Bibliothek: `java -cp … com.android.tools.build.bundletool.BundleToolMain` mit guava,
+    failureaccess, protobuf-java(-util), gson, aapt2-proto, dagger, jakarta.inject-api, javax.inject,
+    jose4j, auto-value-annotations, error_prone_annotations und slf4j-api aus demselben Cache.
+- **Absturzberichte vom Gerät**: `adb -s <serial> shell dumpsys dropbox --print data_app_native_crash`
+  (native Abstürze mit Backtrace; `data_app_crash` für Java-Ausnahmen, `data_app_anr` für Hänger).
+  Warum ein Prozess endete: `adb -s <serial> shell dumpsys activity exit-info de.timhaller.__SLUG__`.
+- Passwörter nie ausgeben, nie committen, nie in Logs schreiben.
+
+### Upload zu Google Play (`tools/android/play_deploy.py`, seit 23.11.2026)
+
+`build_android.sh release --bump --deploy[=TRACK]` baut das AAB, lädt es über die Google Play Developer
+API hoch, legt im Track einen Release `<code> (<version>)` mit vollem Rollout und Release Notes an und
+reicht ihn zur Prüfung ein. Ohne verwaltete Veröffentlichung geht er nach der Freigabe von selbst live.
+Track: `production` (Standard, Alias `prod`), `beta`, `alpha`, `internal`. `--deploy` setzt `--aab`
+voraus, geht nur mit `release`.
+- **Release Notes** kommen aus dem Changelog-Eintrag mit `build` == versionCode: Englisch aus
+  `changelog_entries()`/`changelog()` (mit `tr()`, mit `TranslationServer.translate()` oder als bloße
+  msgids), Deutsch aus `locale/de.po` (fuzzy zählt nicht). Eine Änderung ergibt Fließtext, mehrere ergeben
+  `• `-Zeilen, höchstens 500 Zeichen je Sprache. Jede `de-*`-Sprache des Store-Eintrags bekommt Deutsch,
+  jede `en-*`-Sprache Englisch.
+- **Vor dem Build** prüft `--deploy` den Schlüssel und die Release Notes, noch bevor `--bump` etwas
+  schreibt. Fehlt also der Changelog-Eintrag oder die Übersetzung, wird nichts gebaut und nichts
+  hochgezählt. **Vor dem Upload** prüft es das Merged Manifest auf `screen.portrait` mit
+  `required="false"` (siehe 2).
+- **Schon gebautes AAB nachreichen**: `tools/android/play_deploy.py [AAB] [--track T]`. Ohne AAB nimmt es
+  das zur aktuellen Version in `build/`. Weitere Optionen:
+  - `--validate`: Google prüft alles, veröffentlicht wird nichts. Für den ersten Lauf gedacht.
+  - `--rollout 0.2`: gestaffelter Rollout.
+  - `--replace-in-review`: Liegt noch etwas in Prüfung, wird es zurückgezogen und alles zusammen neu
+    eingereicht. Ohne diese Option bricht das Skript mit Fehler ab und ändert nichts.
+  - `--no-review`: committen, die Prüfung startet man später in der Console.
+  - `--check`: nur die Offline-Prüfung.
+- Das Skript braucht nur die Python-Standardbibliothek und openssl. Es signiert das JWT des Dienstkontos
+  selbst, der private Schlüssel geht per Pipe an openssl und landet nie auf der Platte.
+- **Einmalige Einrichtung** (gilt für alle Apps des Entwicklerkontos):
+  1. Google Cloud Console: ein Projekt anlegen und die *Google Play Android Developer API* aktivieren.
+  2. Dienstkonto anlegen (ohne Cloud-Rollen), dann *Schlüssel → Schlüssel hinzufügen → JSON*.
+  3. Die JSON-Datei nach `~/.android-keystores/play-service-account.json` legen und `chmod 600` setzen
+     (anderer Ort: `PLAY_SERVICE_ACCOUNT_JSON`).
+  4. Play Console → *Nutzer und Berechtigungen* → *Neue Nutzer einladen* → die E-Mail des Dienstkontos
+     eintragen und folgende Rechte geben: App-Informationen ansehen, Releases in Produktion und in
+     Test-Tracks.
+
+  Das frühere Verknüpfen auf der Seite „API-Zugriff“ ist nicht mehr nötig. Bis neue Rechte greifen,
+  kann es eine Weile dauern.
+- Die API legt keine Apps an und kann den ersten Release einer nie veröffentlichten App nicht machen,
+  der läuft über die Console.
+
+## 15. Release-Checkliste (bei jedem Versionssprung)
+
+1. `config/version` in `project.godot` erhöhen (SemVer).
+2. Neuen Eintrag oben in `changelog_entries()`: Version, `build` = bisheriger `version/code` + 1, heutiges Datum.
+3. Alle neuen Texte in `locale/de.po`.
+4. README aktualisieren (Features, Steuerung, Dateien).
+5. Tests grün; `tools/android/build_android.sh release --aab --bump` (erhöht `version/code` in beiden Presets).
+   Danach im Merged Manifest `screen.portrait` mit `required="false"` prüfen (siehe 14).
+   Mit `--deploy` statt `--aab` geht der Release gleich zur Prüfung an Google Play, die Manifest-Prüfung
+   macht dann das Skript (siehe 14, Upload zu Google Play).
+6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen.
+7. Commit `Version X.Y.Z: <Kurzfassung>` (nur wenn der Nutzer committen lässt).
+
+## 16. Projekt-CLAUDE.md (Vorlage)
+
+```markdown
+# __NAME__
+
+Godot-4-Android-Spiel. Folgt dem Guide im Skill `godot-android-game` (~/.claude/skills/godot-android-game).
+
+- Package `de.timhaller.__SLUG__`, Env-Präfix `__ENV__`, Website https://__SLUG__.rellit.de
+- Version: `config/version` in project.godot; Changelog: `GameController.changelog_entries()`
+- Spielstand: `user://savegame.cfg`, Einstellungen: `user://settings.cfg`
+- Tests: `for t in tests/test_*.gd; do godot --headless -s $t; done`
+- Release: Checkliste im Skill, dann `tools/android/build_android.sh release --bump --deploy` (oder `--aab` ohne Upload)
+- Abweichungen vom Guide: …
+```

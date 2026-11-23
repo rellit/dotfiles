@@ -1,0 +1,22 @@
+#!/bin/bash
+
+#Install Claude Code
+if ! (which claude>/dev/null); then
+    curl -fsSL https://claude.ai/install.sh | bash
+fi
+
+mkdir -p ~/.claude
+
+#Remove existing symlinks, keep real files as .bak
+for f in ~/.claude/CLAUDE.md ~/.claude/skills; do
+    if [ -L "$f" ]; then
+        rm -f "$f"
+    elif [ -e "$f" ]; then
+        mv "$f" "$f.bak"
+    fi
+done
+
+#Create symlinks
+ln -s ~/dotfiles/claude/CLAUDE.md ~/.claude/CLAUDE.md
+ln -s ~/dotfiles/claude/skills ~/.claude/skills
+
