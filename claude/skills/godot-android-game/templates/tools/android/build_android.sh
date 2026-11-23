@@ -10,6 +10,9 @@
 #   --version-name X   set the visible version (default: application/config/version)
 #   --skip-tests       do not run the headless test suites first
 #   --install          install the APK on the connected device via adb afterwards (APK only)
+#   --deploy[=TRACK]   then upload the AAB to Google Play, write the release notes from the changelog and
+#                      send it for review (implies --aab, release only). TRACK: production (default,
+#                      alias prod), beta, alpha, internal. Needs a service account: tools/android/play_deploy.py
 #
 # Release signing reads storeFile, storePassword and keyAlias from keystore.properties in the project root
 # (git-ignored, see keystore.properties.example). Missing values fall back to the environment variables
@@ -32,6 +35,7 @@ BUMP=0
 RUN_TESTS=1
 INSTALL=0
 FORMAT="apk"
+DEPLOY=""
 
 while [[ $# -gt 0 ]]; do
 	case "$1" in
@@ -42,7 +46,9 @@ while [[ $# -gt 0 ]]; do
 		--skip-tests) RUN_TESTS=0; shift ;;
 		--install) INSTALL=1; shift ;;
 		--aab) FORMAT="aab"; shift ;;
-		-h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+		--deploy) DEPLOY="production"; FORMAT="aab"; shift ;;
+		--deploy=*) DEPLOY="${1#--deploy=}"; DEPLOY="${DEPLOY:-production}"; FORMAT="aab"; shift ;;
+		-h|--help) sed -n '2,19p' "$0"; exit 0 ;;
 		*) echo "Unknown option: $1" >&2; exit 2 ;;
 	esac
 done
@@ -58,6 +64,7 @@ read_property() {
 
 command -v "$GODOT" >/dev/null || fail "Godot not found (set GODOT=/path/to/godot)"
 [[ "$FORMAT" == "apk" || $INSTALL -eq 0 ]] || fail "--install needs an APK; AABs are installed through Google Play"
+[[ -z "$DEPLOY" || "$MODE" == "release" ]] || fail "--deploy needs a release build (Play only takes the release key)"
 BUILD_TOOLS="$(ls -d "$ANDROID_SDK"/build-tools/*/ 2>/dev/null | sort -V | tail -1)"
 [[ -n "$BUILD_TOOLS" && -x "${BUILD_TOOLS}apksigner" ]] || fail "apksigner not found in $ANDROID_SDK/build-tools"
 APKSIGNER="${BUILD_TOOLS}apksigner"
@@ -69,19 +76,26 @@ current_code="$(sed -n 's/^version\/code=\([0-9]*\)$/\1/p' "$PRESET_FILE" | head
 if [[ $BUMP -eq 1 ]]; then
 	VERSION_CODE=$((current_code + 1))
 fi
-if [[ -n "$VERSION_CODE" ]]; then
-	[[ "$VERSION_CODE" =~ ^[0-9]+$ ]] || fail "--version-code must be a number"
-	sed -i "s/^version\/code=.*/version\/code=$VERSION_CODE/" "$PRESET_FILE"
-else
-	VERSION_CODE="$current_code"
-fi
-if [[ -n "$VERSION_NAME" ]]; then
-	sed -i "s/^version\/name=.*/version\/name=\"$VERSION_NAME\"/" "$PRESET_FILE"
-else
+[[ -z "$VERSION_CODE" || "$VERSION_CODE" =~ ^[0-9]+$ ]] || fail "--version-code must be a number"
+# New values are written to the presets only after the Google Play check below
+NEW_CODE="$VERSION_CODE"
+NEW_NAME="$VERSION_NAME"
+VERSION_CODE="${VERSION_CODE:-$current_code}"
+if [[ -z "$VERSION_NAME" ]]; then
 	VERSION_NAME="$(sed -n 's/^version\/name="\(.*\)"$/\1/p' "$PRESET_FILE" | head -1)"
 	# An empty preset name makes Godot use the project version
 	[[ -n "$VERSION_NAME" ]] || VERSION_NAME="$(sed -n 's/^config\/version="\(.*\)"$/\1/p' "$ROOT/project.godot")"
 fi
+
+# ---- Google Play
+# Service account key and release notes (changelog entry + de.po) are checked before anything is built,
+# so a forgotten changelog entry stops the run before the versionCode is bumped
+if [[ -n "$DEPLOY" ]]; then
+	python3 "$ROOT/tools/android/play_deploy.py" --check --track "$DEPLOY" \
+		--version-code "$VERSION_CODE" --version-name "$VERSION_NAME" || fail "not ready for Google Play (see above)"
+fi
+[[ -z "$NEW_CODE" ]] || sed -i "s/^version\/code=.*/version\/code=$NEW_CODE/" "$PRESET_FILE"
+[[ -z "$NEW_NAME" ]] || sed -i "s/^version\/name=.*/version\/name=\"$NEW_NAME\"/" "$PRESET_FILE"
 
 OUT="$ROOT/build/__SLUG__-${VERSION_NAME}-${VERSION_CODE}-${MODE}.${FORMAT}"
 mkdir -p "$ROOT/build"
@@ -226,4 +240,17 @@ echo "Built $OUT ($(du -h "$OUT" | cut -f1))"
 if [[ $INSTALL -eq 1 ]]; then
 	step "Installing on device"
 	adb install -r "$OUT"
+fi
+
+if [[ -n "$DEPLOY" ]]; then
+	# Play rejects a release that makes a portrait screen required hardware; --deploy leaves no time to look
+	manifest="$(ls -t "$ROOT"/android/build/build/intermediates/bundle_manifest/*/*/AndroidManifest.xml 2>/dev/null | head -1)"
+	[[ -n "$manifest" ]] || fail "no merged manifest from the AAB build, not uploading"
+	if grep -q 'android.hardware.screen.portrait' "$manifest" \
+		&& ! grep -A1 'android.hardware.screen.portrait' "$manifest" | grep -q 'android:required="false"'; then
+		fail "the AAB requires a portrait screen, Google Play rejects that (addons/portrait_optional missing?)"
+	fi
+	step "Google Play ($DEPLOY)"
+	python3 "$ROOT/tools/android/play_deploy.py" "$OUT" --track "$DEPLOY" \
+		|| fail "the build is fine, the upload is not; once fixed: tools/android/play_deploy.py $OUT --track $DEPLOY"
 fi

@@ -1,6 +1,6 @@
 ---
 name: godot-android-game
-description: Tims Standard für Godot-4-Spiele auf Android (Hexmosis, Orbitrio). Laden, sobald ein neues Godot-Spiel angelegt wird oder an einem bestehenden gearbeitet wird – Features, Release/Versionssprung, Android-Build (APK/AAB), Keystore/Signierung, Changelog, Credits/About, Lizenzen, Splash, App-Icon, Audio/Musik, How to play, Spielstand fortsetzen (Resume), Übersetzung, Safe Area, Store-Screenshots und Play-Store-Eintrag.
+description: Tims Standard für Godot-4-Spiele auf Android (Hexmosis, Orbitrio). Laden, sobald ein neues Godot-Spiel angelegt wird oder an einem bestehenden gearbeitet wird – Features, Release/Versionssprung, Android-Build (APK/AAB), Keystore/Signierung, Upload und Prüfung bei Google Play (Play Developer API), Changelog, Credits/About, Lizenzen, Splash, App-Icon, Audio/Musik, How to play, Spielstand fortsetzen (Resume), Übersetzung, Safe Area, Store-Screenshots und Play-Store-Eintrag.
 ---
 
 # Godot-Android-Spiele: Entwicklungs-Guide
@@ -46,7 +46,7 @@ scripts/help_*.gd                  # Bildchen für How to play
 locale/de.po
 assets/{icon,splash,fonts,audio/music,audio/sfx}/
 tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd
-tools/android/build_android.sh  create_keystore.sh  GodotApp.java
+tools/android/build_android.sh  create_keystore.sh  GodotApp.java  play_deploy.py
 tests/test_*.gd                    # headless, extends SceneTree
 build/                             # Ausgabe, git-ignored
 ```
@@ -296,6 +296,46 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh,GodotApp
   Warum ein Prozess endete: `adb -s <serial> shell dumpsys activity exit-info de.timhaller.__SLUG__`.
 - Passwörter nie ausgeben, nie committen, nie in Logs schreiben.
 
+### Upload zu Google Play (`tools/android/play_deploy.py`, seit 23.11.2026)
+
+`build_android.sh release --bump --deploy[=TRACK]` baut das AAB, lädt es über die Google Play Developer
+API hoch, legt im Track einen Release `<code> (<version>)` mit vollem Rollout und Release Notes an und
+reicht ihn zur Prüfung ein. Ohne verwaltete Veröffentlichung geht er nach der Freigabe von selbst live.
+Track: `production` (Standard, Alias `prod`), `beta`, `alpha`, `internal`. `--deploy` setzt `--aab`
+voraus, geht nur mit `release`.
+- **Release Notes** kommen aus dem Changelog-Eintrag mit `build` == versionCode: Englisch aus
+  `changelog_entries()`/`changelog()` (mit `tr()`, mit `TranslationServer.translate()` oder als bloße
+  msgids), Deutsch aus `locale/de.po` (fuzzy zählt nicht). Eine Änderung ergibt Fließtext, mehrere ergeben
+  `• `-Zeilen, höchstens 500 Zeichen je Sprache. Jede `de-*`-Sprache des Store-Eintrags bekommt Deutsch,
+  jede `en-*`-Sprache Englisch.
+- **Vor dem Build** prüft `--deploy` den Schlüssel und die Release Notes, noch bevor `--bump` etwas
+  schreibt. Fehlt also der Changelog-Eintrag oder die Übersetzung, wird nichts gebaut und nichts
+  hochgezählt. **Vor dem Upload** prüft es das Merged Manifest auf `screen.portrait` mit
+  `required="false"` (siehe 2).
+- **Schon gebautes AAB nachreichen**: `tools/android/play_deploy.py [AAB] [--track T]`. Ohne AAB nimmt es
+  das zur aktuellen Version in `build/`. Weitere Optionen:
+  - `--validate`: Google prüft alles, veröffentlicht wird nichts. Für den ersten Lauf gedacht.
+  - `--rollout 0.2`: gestaffelter Rollout.
+  - `--replace-in-review`: Liegt noch etwas in Prüfung, wird es zurückgezogen und alles zusammen neu
+    eingereicht. Ohne diese Option bricht das Skript mit Fehler ab und ändert nichts.
+  - `--no-review`: committen, die Prüfung startet man später in der Console.
+  - `--check`: nur die Offline-Prüfung.
+- Das Skript braucht nur die Python-Standardbibliothek und openssl. Es signiert das JWT des Dienstkontos
+  selbst, der private Schlüssel geht per Pipe an openssl und landet nie auf der Platte.
+- **Einmalige Einrichtung** (gilt für alle Apps des Entwicklerkontos):
+  1. Google Cloud Console: ein Projekt anlegen und die *Google Play Android Developer API* aktivieren.
+  2. Dienstkonto anlegen (ohne Cloud-Rollen), dann *Schlüssel → Schlüssel hinzufügen → JSON*.
+  3. Die JSON-Datei nach `~/.android-keystores/play-service-account.json` legen und `chmod 600` setzen
+     (anderer Ort: `PLAY_SERVICE_ACCOUNT_JSON`).
+  4. Play Console → *Nutzer und Berechtigungen* → *Neue Nutzer einladen* → die E-Mail des Dienstkontos
+     eintragen und folgende Rechte geben: App-Informationen ansehen, Releases in Produktion und in
+     Test-Tracks.
+
+  Das frühere Verknüpfen auf der Seite „API-Zugriff“ ist nicht mehr nötig. Bis neue Rechte greifen,
+  kann es eine Weile dauern.
+- Die API legt keine Apps an und kann den ersten Release einer nie veröffentlichten App nicht machen,
+  der läuft über die Console.
+
 ## 15. Release-Checkliste (bei jedem Versionssprung)
 
 1. `config/version` in `project.godot` erhöhen (SemVer).
@@ -304,6 +344,8 @@ Vorlagen: `templates/tools/android/{build_android.sh,create_keystore.sh,GodotApp
 4. README aktualisieren (Features, Steuerung, Dateien).
 5. Tests grün; `tools/android/build_android.sh release --aab --bump` (erhöht `version/code` in beiden Presets).
    Danach im Merged Manifest `screen.portrait` mit `required="false"` prüfen (siehe 14).
+   Mit `--deploy` statt `--aab` geht der Release gleich zur Prüfung an Google Play, die Manifest-Prüfung
+   macht dann das Skript (siehe 14, Upload zu Google Play).
 6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen.
 7. Commit `Version X.Y.Z: <Kurzfassung>` (nur wenn der Nutzer committen lässt).
 
@@ -318,6 +360,6 @@ Godot-4-Android-Spiel. Folgt dem Guide im Skill `godot-android-game` (~/.claude/
 - Version: `config/version` in project.godot; Changelog: `GameController.changelog_entries()`
 - Spielstand: `user://savegame.cfg`, Einstellungen: `user://settings.cfg`
 - Tests: `for t in tests/test_*.gd; do godot --headless -s $t; done`
-- Release: Checkliste im Skill, dann `tools/android/build_android.sh release --aab --bump`
+- Release: Checkliste im Skill, dann `tools/android/build_android.sh release --bump --deploy` (oder `--aab` ohne Upload)
 - Abweichungen vom Guide: …
 ```
