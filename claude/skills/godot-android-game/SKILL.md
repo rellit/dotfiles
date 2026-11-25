@@ -46,7 +46,7 @@ scripts/help_*.gd                  # Bildchen für How to play
 locale/de.po
 assets/{icon,splash,fonts,audio/music,audio/sfx}/
 tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd
-tools/android/build_android.sh  create_keystore.sh  GodotApp.java  play_deploy.py
+tools/android/build_android.sh  create_keystore.sh  GodotApp.java  play_deploy.py  play_listing.py
 tests/test_*.gd                    # headless, extends SceneTree
 build/                             # Ausgabe, git-ignored
 ```
@@ -225,6 +225,8 @@ mit Anti-Aliasing in jeder Größe:
 - `build/store/listing.md`: Play-Eintrag de/en (Titel ≤30, Kurzbeschreibung ≤80, Beschreibung),
   Datenschutz `https://__SLUG__.rellit.de/datenschutz-app` (EN `/en/app-privacy`), Kontakt mail@timhaller.de,
   „komplett offline, keine Berechtigungen“.
+- **Store-Eintrag hochladen**: `tools/android/play_listing.py` (Vorlage, seit 25.11.2026, Kawaii Bakery),
+  siehe 14 „Store-Eintrag über die API“.
 
 ## 14. Android-Build und Signierung – Pflicht
 
@@ -320,6 +322,10 @@ voraus, geht nur mit `release`.
     eingereicht. Ohne diese Option bricht das Skript mit Fehler ab und ändert nichts.
   - `--no-review`: committen, die Prüfung startet man später in der Console.
   - `--check`: nur die Offline-Prüfung.
+- **Changelog-Eintrag kurz halten**: Die Release Notes sind auf 500 Zeichen je Sprache begrenzt, inklusive
+  `• ` und Zeilenumbrüchen. Mit fünf kurzen Zeilen kommt man hin, sieben ausführliche Zeilen waren schon 752
+  Zeichen (Kawaii Bakery 1.1.0). `play_deploy.py --check --version-code N --version-name X` prüft das,
+  bevor man baut.
 - Das Skript braucht nur die Python-Standardbibliothek und openssl. Es signiert das JWT des Dienstkontos
   selbst, der private Schlüssel geht per Pipe an openssl und landet nie auf der Platte.
 - **Einmalige Einrichtung** (gilt für alle Apps des Entwicklerkontos):
@@ -329,12 +335,33 @@ voraus, geht nur mit `release`.
      (anderer Ort: `PLAY_SERVICE_ACCOUNT_JSON`).
   4. Play Console → *Nutzer und Berechtigungen* → *Neue Nutzer einladen* → die E-Mail des Dienstkontos
      eintragen und folgende Rechte geben: App-Informationen ansehen, Releases in Produktion und in
-     Test-Tracks.
+     Test-Tracks, für `play_listing.py` außerdem **Store-Präsenz verwalten**. Fehlt dieses Recht,
+     gehen die Uploads zwar durch, aber das Prüfen des Edits endet mit „HTTP 403: The caller does not
+     have permission“.
 
   Das frühere Verknüpfen auf der Seite „API-Zugriff“ ist nicht mehr nötig. Bis neue Rechte greifen,
   kann es eine Weile dauern.
 - Die API legt keine Apps an und kann den ersten Release einer nie veröffentlichten App nicht machen,
   der läuft über die Console.
+
+### Store-Eintrag über die API (`tools/android/play_listing.py`, seit 25.11.2026)
+
+Lädt hoch, was `generate_store_assets.py` nach `build/store/` geschrieben hat:
+- **Texte** aus `listing.md`: Titel, Kurzbeschreibung und Beschreibung je Abschnitt `## de-DE` / `## en-US`.
+  Das Skript erwartet dort `Titel (≤30): …` bzw. `Title (≤30): …`, darunter `Kurzbeschreibung (≤80):` bzw.
+  `Short description (≤80):`, gefolgt vom Text und einer Leerzeile, dann `Beschreibung:` bzw.
+  `Full description:` mit allem bis zum nächsten Abschnitt. Die Längen 30/80/4000 prüft es selbst.
+- **Bilder**: `<de|en>/phone_*.png` ersetzen die Handy-Screenshots in Dateireihenfolge (höchstens 8),
+  dazu `feature_graphic.png`. Das Icon bleibt, wie es ist.
+- Jede `de-*`-Sprache des Eintrags bekommt Deutsch, jede `en-*`-Sprache Englisch.
+- Optionen wie bei `play_deploy.py`: `--validate` zuerst, `--replace-in-review`, `--no-review` und
+  `--check` (nur die Dateien). Dazu `--texts-only`, das nur die Texte hochlädt.
+- Nutzt Anmeldung und API-Aufrufe aus `play_deploy.py` (Import aus demselben Ordner), also dasselbe
+  Dienstkonto. Es braucht aber zusätzlich das Recht „Store-Präsenz verwalten“ (Einrichtung, Schritt 4).
+- **Liegt ein Release in Prüfung**, bricht der Commit ohne `--replace-in-review` ab und ändert nichts. Mit
+  der Option werden Release und Store-Eintrag zusammen neu eingereicht. Der Release bleibt dabei im Track,
+  weil das Edit auf dem committeten Stand aufsetzt. Geprüft wurde das bei Kawaii Bakery 1.1.0
+  (Build 12 danach weiter `completed` in production).
 
 ## 15. Release-Checkliste (bei jedem Versionssprung)
 
@@ -346,7 +373,9 @@ voraus, geht nur mit `release`.
    Danach im Merged Manifest `screen.portrait` mit `required="false"` prüfen (siehe 14).
    Mit `--deploy` statt `--aab` geht der Release gleich zur Prüfung an Google Play, die Manifest-Prüfung
    macht dann das Skript (siehe 14, Upload zu Google Play).
-6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen.
+6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen
+   (`python3 tools/generate_store_assets.py`) und per `tools/android/play_listing.py --validate`, dann ohne
+   `--validate` einreichen. Liegt der Release gerade in Prüfung, braucht das `--replace-in-review` (siehe 14).
 7. Commit `Version X.Y.Z: <Kurzfassung>` (nur wenn der Nutzer committen lässt).
 
 ## 16. Projekt-CLAUDE.md (Vorlage)
