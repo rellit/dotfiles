@@ -131,6 +131,10 @@ fi
 
 echo "__NAME__ $VERSION_NAME (versionCode $VERSION_CODE), $MODE ${FORMAT^^}"
 
+# ---- more games: the list of the other rellit games, fresh from rellit.de, and a look for missing ones
+step "More games"
+GODOT="$GODOT" python3 "$ROOT/tools/more_games.py" || fail "tools/more_games.py failed"
+
 # ---- tests
 if [[ $RUN_TESTS -eq 1 ]]; then
 	step "Running tests"

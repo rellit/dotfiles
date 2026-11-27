@@ -24,8 +24,9 @@ Projektname-Schema, überall gleich verwenden:
 
 ```bash
 S=~/.claude/skills/godot-android-game/templates
-cp -r $S/tools $S/addons $S/run_desktop.sh $S/keystore.properties.example $S/export_presets.cfg .
+cp -r $S/tools $S/addons $S/scripts $S/tests $S/run_desktop.sh $S/keystore.properties.example $S/export_presets.cfg .
 cp $S/gitignore .gitignore
+mkdir -p locale && cat $S/locale/more_games.de.po >> locale/de.po   # Texte für Teilen/Mehr Spiele (6a)
 find tools run_desktop.sh keystore.properties.example export_presets.cfg -type f -exec sed -i \
   -e 's/__NAME__/Orbitrio/g' -e 's/__SLUG__/orbitrio/g' -e 's/__ENV__/ORBITRIO/g' {} +
 ```
@@ -43,9 +44,12 @@ scripts/<x>_view.gd                # Zeichnen, Eingabe, Animation
 scripts/game_controller.gd         # Menü, Dialoge, Speichern, Back, Safe Area
 scripts/sound_manager.gd           # Musik, Effekte, Lautstärken
 scripts/help_*.gd                  # Bildchen für How to play
+scripts/more_games.gd  more_games_overlay.gd   # Teilen + Mehr Spiele (Vorlage, 6a)
+scripts/more_games_catalog.gd      # erzeugt von tools/more_games.py, committed
 locale/de.po
 assets/{icon,splash,fonts,audio/music,audio/sfx}/
-tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd
+assets/more_games/                 # Banner der anderen Spiele, erzeugt, committed
+tools/generate_icon.py  generate_sounds.py  generate_store_assets.py  capture_screenshots.gd  more_games.py
 tools/android/build_android.sh  create_keystore.sh  GodotApp.java  play_deploy.py  play_listing.py
 tests/test_*.gd                    # headless, extends SceneTree
 build/                             # Ausgabe, git-ignored
@@ -111,6 +115,54 @@ dann den eigenen Wert setzen, damit andere Abschnitte erhalten bleiben.
 Menü: **CONTINUE** (nur mit Spielstand) · **NEW GAME** · **HOW TO PLAY** · ggf. **HIGHSCORES** ·
 **SOUND/SETTINGS** · **ABOUT**. Im Spiel eine Leiste mit MENU, `?` (How to play) und `♪`/Zahnrad (Sound).
 Dialoge sind Overlays in `game.tscn`, gehen mit kurzem Pop-in auf, jeder Button spielt `UI_CLICK`.
+
+## 6a. Mit Freunden teilen und Mehr Spiele – Pflicht
+
+Seit 27.11.2026 in allen Spielen gleich (Vorbild Orbitrio, `_add_more_games()` im Controller). In den
+Einstellungen zwei Knöpfe unter den eigenen, im Stil des Dialogs:
+- **MIT FREUNDEN TEILEN** (`SHARE WITH FRIENDS`): Androids Teilen-Dialog (ACTION_SEND über
+  `JavaClassWrapper` mit `Intent.parseUri`/`createChooser`, kein Plugin, keine Berechtigung) mit
+  „Ich spiele gerade X – probier es auch mal aus!“, dem Satz aus apps.ts und dem Play-Link.
+  Desktop: Text in die Zwischenablage, Hinweis „In die Zwischenablage kopiert“.
+- **MEHR SPIELE** (`MORE GAMES`): Seite mit einer Karte je anderem veröffentlichten Spiel – Feature-Grafik
+  als Banner, Name, Gattung, ein Satz, INSTALLIEREN. Tippen öffnet die Play-Store-App (`market://`, sonst
+  die Webseite), mit `referrer=utm_source=<slug>&utm_medium=more_games` für die Akquisitionsberichte.
+  Wischen über Karten scrollt die Liste und öffnet nichts.
+
+Dateien (Vorlagen unverändert kopieren): `scripts/more_games.gd`, `scripts/more_games_overlay.gd`,
+`tools/more_games.py`, `tests/test_more_games.gd` (spielspezifisch nur der Abschnitt „host“),
+`locale/more_games.de.po` an `locale/de.po` hängen (fehlt dort `CLOSE`, ergänzen). Erzeugt und committet:
+`scripts/more_games_catalog.gd` (`SELF`, `GAMES`) und `assets/more_games/<slug>_<de|en>.webp` + `.import`.
+
+Einbau im Controller:
+1. `const MoreGames := preload("res://scripts/more_games.gd")`, `const MoreGamesOverlay := preload(...)`,
+   Variablen `share_button`, `more_games_button`, `more_games_overlay`.
+2. `_add_more_games()` **nach** der Schleife, die allen Buttons `UI_CLICK` anhängt – sonst klickt die
+   Seite doppelt (Spiele, die auch später entstehende Buttons hooken wie Kawaii Bakery: `clicked` nicht
+   verbinden). Knöpfe: `MoreGames.make_button(<Button des Dialogs>, "SHARE WITH FRIENDS")`, Klick selbst
+   verbinden. Seite: `MoreGamesOverlay.new()` als letztes Kind der Wurzel bzw. der UI-CanvasLayer;
+   `dress_like(panel, titel_label, text_label, button[, close_text])` übernimmt den Stil des Dialogs
+   sofort als Daten (`close_text`, wenn der Dialog nur ein ✕ hat). Die Seite liegt mit `z_index` 1000 über
+   allem und rückt sich selbst in die Safe Area ein.
+3. `_close_top_dialog()`/`go_back()`: `more_games_overlay.close()` vor den Einstellungen; in
+   `_dialog_open()` bzw. die Overlay-Listen aufnehmen (Banner-Werbung, Gegen-KI).
+4. `share_game()`: `if not MoreGames.share(): MoreGames.toast(settings_overlay, tr("Copied to the clipboard"))`.
+- Ohne Einstellungs-Dialog (Wacky Bridge) zuoberst unter ABOUT. Heißt der Dialog nur „SOUND“, in
+  `SETTINGS`/„EINSTELLUNGEN“ umbenennen (DataBurst, Sky Bridge).
+
+**Liste und Build.** Quelle ist `~/Entwicklung/rellit.de/packages/theme/src/data/apps.ts` (`kind: "game"`,
+`published: true`), Banner ist `build/store/<de|en>/feature_graphic.png` des anderen Spiels
+(`generate_store_assets.py`). `build_android.sh` ruft vor den Tests `tools/more_games.py` auf: Liste und
+Banner (768×375 WebP, verlustbehaftet importiert, ~20 KB im Build) aktualisieren, neue Banner importieren
+und **fehlende Spiele melden** (`WARNING:`): veröffentlichtes Spiel ohne Banner auf dem Rechner,
+Spielprojekt mit Release-AAB nicht in apps.ts, laut Play Leitstand live aber `published: false` (oder
+umgekehrt), das eigene Spiel nicht veröffentlicht. Meldet es `updated:`, die Dateien mit committen.
+Neues Spiel live → in apps.ts `published: true`; die anderen nehmen es beim nächsten Build auf.
+`python3 tools/more_games.py --check` prüft nur (Exit 1 = Liste veraltet).
+- Prüfen auf Gerät/Emulator: Teilen startet `com.android.intentresolver/.ChooserActivity` (logcat
+  „START u0 {act=android.intent.action.CHOOSER“); Emulator-Images ohne Play Store öffnen den Store-Link in
+  Chrome (logcat „Unable to open uri market://…“ ist dort richtig). Godot im Emulator braucht `-gpu host`,
+  mit `swiftshader_indirect` bleibt das Bild schwarz.
 
 ## 7. How to play – Pflicht
 
@@ -214,6 +266,8 @@ mit Anti-Aliasing in jeder Größe:
 - Tests: `tests/test_*.gd`, `extends SceneTree`, headless (`godot --headless -s tests/x.gd`), Exit-Code ≠ 0
   bei Fehler. Regeln, Speichern/Laden, Menüfluss durch die echte Szene (`Engine.time_scale` hoch),
   About/Changelog/Licenses, Back-Taste, Audio. `build_android.sh` führt alle aus.
+- Ein Laufzeitfehler (SCRIPT ERROR) beendet in GDScript nur die Funktion, der Test endet trotzdem mit 0.
+  Szenen-Tests setzen darum am Ende ein `scene_done` und prüfen es in `_init` (wie `test_more_games.gd`).
 - `tools/capture_screenshots.gd`: echte Szene in SubViewport, fester Seed, Sound stumm, `persist=false`.
   Standard 1080×2340 (Website, `apps/__SLUG__/public/screens/` im rellit.de-Repo, als WebP);
   `-- <dir> <de|en> store` → 1080×1920 (Play nimmt nichts länger als 2:1). Braucht Display.
@@ -404,10 +458,14 @@ Lädt hoch, was `generate_store_assets.py` nach `build/store/` geschrieben hat:
    Danach im Merged Manifest `screen.portrait` mit `required="false"` prüfen (siehe 14).
    Mit `--deploy` statt `--aab` geht der Release gleich zur Prüfung an Google Play, die Manifest-Prüfung
    macht dann das Skript (siehe 14, Upload zu Google Play).
+   Der Schritt „More games“ im Build meldet fehlende Spiele (siehe 6a): Warnungen klären, geänderte
+   `assets/more_games/` und `scripts/more_games_catalog.gd` mit committen.
 6. Bei sichtbaren Änderungen: Screenshots / Store-Assets neu erzeugen
    (`python3 tools/generate_store_assets.py`) und per `tools/android/play_listing.py --validate`, dann ohne
    `--validate` einreichen. Liegt der Release gerade in Prüfung, braucht das `--replace-in-review` (siehe 14).
 7. Commit `Version X.Y.Z: <Kurzfassung>` (nur wenn der Nutzer committen lässt).
+8. Erster öffentlicher Release eines neuen Spiels: in rellit.de `apps.ts` `published: true` setzen – dann
+   nimmt jedes andere Spiel es beim nächsten Build in „Mehr Spiele“ auf (6a).
 
 ## 16. Projekt-CLAUDE.md (Vorlage)
 

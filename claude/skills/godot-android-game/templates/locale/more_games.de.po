@@ -1,0 +1,20 @@
+
+# ---- Share with friends / More games (scripts/more_games.gd, more_games_overlay.gd)
+
+msgid "SHARE WITH FRIENDS"
+msgstr "MIT FREUNDEN TEILEN"
+
+msgid "MORE GAMES"
+msgstr "MEHR SPIELE"
+
+msgid "INSTALL"
+msgstr "INSTALLIEREN"
+
+msgid "I'm playing %s right now – give it a try!"
+msgstr "Ich spiele gerade %s – probier es auch mal aus!"
+
+msgid "Share %s"
+msgstr "%s teilen"
+
+msgid "Copied to the clipboard"
+msgstr "In die Zwischenablage kopiert"
