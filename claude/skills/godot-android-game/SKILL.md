@@ -223,7 +223,7 @@ mit Anti-Aliasing in jeder Größe:
   importiert Godot die Screenshots/Store-PNGs als Ressourcen und packt sie ins APK/AAB. Prüfen:
   `unzip -l build/*.apk | grep -E "build/|\.ctex"` darf nichts liefern.
 - `build/store/listing.md`: Play-Eintrag de/en (Titel ≤30, Kurzbeschreibung ≤80, Beschreibung),
-  Datenschutz `https://__SLUG__.rellit.de/datenschutz-app` (EN `/en/app-privacy`), Kontakt mail@timhaller.de,
+  Datenschutz `https://__SLUG__.rellit.de/datenschutz-app` (EN `/en/app-privacy`), Kontakt support@rellit.de,
   „komplett offline, keine Berechtigungen“.
 - **Store-Eintrag hochladen**: `tools/android/play_listing.py` (Vorlage, seit 25.11.2026, Kawaii Bakery),
   siehe 14 „Store-Eintrag über die API“.
