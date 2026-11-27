@@ -321,6 +321,9 @@ voraus, geht nur mit `release`.
   - `--replace-in-review`: Liegt noch etwas in Prüfung, wird es zurückgezogen und alles zusammen neu
     eingereicht. Ohne diese Option bricht das Skript mit Fehler ab und ändert nichts.
   - `--no-review`: committen, die Prüfung startet man später in der Console.
+  - `--draft`: den Release als Entwurf in den Track legen (ohne Rollout, nichts geht zur Prüfung).
+    Länder/Regionen und das Einreichen macht man dann in der Console. Für eine neue App schaltet das
+    Skript von selbst darauf um (siehe unten „Neue App“).
   - `--check`: nur die Offline-Prüfung.
 - **Changelog-Eintrag kurz halten**: Die Release Notes sind auf 500 Zeichen je Sprache begrenzt, inklusive
   `• ` und Zeilenumbrüchen. Mit fünf kurzen Zeilen kommt man hin, sieben ausführliche Zeilen waren schon 752
@@ -341,8 +344,25 @@ voraus, geht nur mit `release`.
 
   Das frühere Verknüpfen auf der Seite „API-Zugriff“ ist nicht mehr nötig. Bis neue Rechte greifen,
   kann es eine Weile dauern.
-- Die API legt keine Apps an und kann den ersten Release einer nie veröffentlichten App nicht machen,
-  der läuft über die Console.
+- **Die Rechte des Dienstkontos gelten pro App.** Für jede neue App muss Tim in *Nutzer und
+  Berechtigungen* beim Dienstkonto zusätzlich **Store-Präsenz verwalten** für diese App geben. Bei Wacky
+  Bridge (27.11.2026) reichten die Release-Rechte für den Upload, das Prüfen des Listing-Edits endete mit
+  HTTP 403. `play_listing.py` nennt das Recht bei einem 403 selbst.
+- **Neue App (noch nie veröffentlicht)**, gelernt bei Wacky Bridge am 27.11.2026:
+  1. Die App selbst legt nur die Console an. Dort wird beim Anlegen der Paketname eingegeben.
+  2. Die API nimmt für eine solche App nur Releases mit `status: "draft"` an, sonst kommt
+     „HTTP 400: Only releases with status draft may be created on draft app“. `play_deploy.py` (auch über
+     `build_android.sh release --deploy`) schaltet dann im selben Edit auf `--draft` um, das AAB wird also
+     nur einmal hochgeladen. Mit `--draft` geht es direkt so. Release Notes kommen wie sonst mit,
+     der Commit läuft ohne Prüfungs-Parameter.
+  3. Danach in der Console: *Produktion → Länder/Regionen* hinzufügen und speichern, unter *Releases*
+     den Entwurf bearbeiten, prüfen und speichern. Zum Schluss in der *Übersicht über die
+     Veröffentlichung* die Änderungen zur Prüfung senden. Die Hinweise auf fehlende Deobfuscation- und
+     Debug-Symbole sind bei Godot normal.
+  4. Den Release nicht über den Browser hochladen: Der Datei-Upload über Claude in Chrome ist auf 10 MB
+     begrenzt, AABs sind größer (Wacky Bridge: 60 MB). Darum der Weg über den API-Entwurf.
+  5. Store-Eintrag: `play_listing.py --create-languages --icon` (siehe unten). Das braucht vorher das
+     Recht „Store-Präsenz verwalten“ für die neue App.
 
 ### Store-Eintrag über die API (`tools/android/play_listing.py`, seit 25.11.2026)
 
@@ -352,12 +372,23 @@ Lädt hoch, was `generate_store_assets.py` nach `build/store/` geschrieben hat:
   `Short description (≤80):`, gefolgt vom Text und einer Leerzeile, dann `Beschreibung:` bzw.
   `Full description:` mit allem bis zum nächsten Abschnitt. Die Längen 30/80/4000 prüft es selbst.
 - **Bilder**: `<de|en>/phone_*.png` ersetzen die Handy-Screenshots in Dateireihenfolge (höchstens 8),
-  dazu `feature_graphic.png`. Das Icon bleibt, wie es ist.
-- Jede `de-*`-Sprache des Eintrags bekommt Deutsch, jede `en-*`-Sprache Englisch.
+  dazu `feature_graphic.png`. Das Icon bleibt, wie es ist, außer mit `--icon`.
+- Jede `de-*`-Sprache des Eintrags bekommt Deutsch, jede `en-*`-Sprache Englisch. Ohne
+  `--create-languages` aktualisiert das Skript nur Sprachen, die es bei Google Play schon gibt. Fehlt
+  `de-DE` oder `en-US`, meldet es das und überspringt die Sprache. Hat die App gar keine, bricht es ab.
 - Optionen wie bei `play_deploy.py`: `--validate` zuerst, `--replace-in-review`, `--no-review` und
-  `--check` (nur die Dateien). Dazu `--texts-only`, das nur die Texte hochlädt.
+  `--check` (nur die Dateien). Dazu kommen:
+  - `--texts-only`: nur die Texte hochladen.
+  - `--create-languages`: die Sprachen aus `listing.md` (die Abschnittsköpfe, also `de-DE` und `en-US`)
+    mit `PUT edits/{edit}/listings/{lang}` anlegen, wo sie fehlen. Gedacht für eine neue App, die noch
+    keinen Eintrag hat.
+  - `--icon`: zusätzlich das Icon in jeder Sprache durch `build/store/icon_512.png` ersetzen. `--check`
+    prüft vorher PNG, 512×512 und höchstens 1 MB. Geht auch mit `--texts-only`.
+- **Neue App**: `play_listing.py --create-languages --icon --validate`, dann ohne `--validate`.
 - Nutzt Anmeldung und API-Aufrufe aus `play_deploy.py` (Import aus demselben Ordner), also dasselbe
-  Dienstkonto. Es braucht aber zusätzlich das Recht „Store-Präsenz verwalten“ (Einrichtung, Schritt 4).
+  Dienstkonto. Es braucht aber zusätzlich das Recht „Store-Präsenz verwalten“, und zwar für jede App
+  einzeln (Einrichtung, Schritt 4, und „Die Rechte des Dienstkontos gelten pro App“). Fehlt es, laufen die
+  Uploads durch, aber das Prüfen oder Committen endet mit HTTP 403.
 - **Liegt ein Release in Prüfung**, bricht der Commit ohne `--replace-in-review` ab und ändert nichts. Mit
   der Option werden Release und Store-Eintrag zusammen neu eingereicht. Der Release bleibt dabei im Track,
   weil das Edit auf dem committeten Stand aufsetzt. Geprüft wurde das bei Kawaii Bakery 1.1.0

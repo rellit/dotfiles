@@ -11,6 +11,8 @@ Usage: tools/android/play_deploy.py [AAB] [options]
   --replace-in-review  if other changes are still in review, withdraw them and send everything again
                        (default: stop with an error and change nothing)
   --no-review          commit without sending for review; send it from the Play Console later
+  --draft              put the release in the track as a draft (no rollout, nothing sent for review);
+                       countries/regions and sending it for review are then done in the Play Console
   --check              only check what can be checked offline: service account key and release notes
   --version-code N, --version-name X
                        with --check: the version to check (default: taken from the AAB name)
@@ -18,6 +20,12 @@ Usage: tools/android/play_deploy.py [AAB] [options]
 Release notes come from the changelog entry whose "build" is the AAB's versionCode: English from the
 game controller (changelog_entries() or changelog()), German from locale/de.po. Every de-* listing
 language gets the German text, every en-* language the English one. At most 500 characters each.
+
+New app: for an app that has never been published Google only takes draft releases ("Only releases
+with status draft may be created on draft app"). The script then switches to --draft by itself, in the
+same edit, so the bundle is uploaded only once. Afterwards, in the Play Console: the track's
+countries/regions, then edit the draft release, check it, save, and send the changes for review in the
+Publishing overview. The app itself can only be created in the Play Console.
 
 Credentials: the JSON key of a Google Cloud service account that is invited in the Play Console
 (Users and permissions) with release rights for the app. Path: $PLAY_SERVICE_ACCOUNT_JSON, default
@@ -331,10 +339,25 @@ def notes_for_listings(play: Play, edit: str, notes: dict[str, str]) -> list[dic
     return result
 
 
+def is_draft_app(error: DeployError) -> bool:
+    # Google's answer for a non-draft release of an app that has never been published
+    return isinstance(error, ApiError) and error.status == 400 and "draft app" in str(error).lower()
+
+
+def commit_params(args: argparse.Namespace, draft: bool) -> dict:
+    if args.no_review:
+        return {"changesNotSentForReview": "true"}
+    if args.replace_in_review:
+        return {"changesInReviewBehavior": "CANCEL_IN_REVIEW_AND_SUBMIT"}
+    # A draft goes nowhere by itself; a plain commit is what worked for a never-published app (Wacky Bridge 1.0.0)
+    return {} if draft else {"changesInReviewBehavior": "ERROR_IF_IN_REVIEW"}
+
+
 def deploy(aab: Path, track: str, args: argparse.Namespace, notes: dict[str, str]) -> None:
     package = package_name()
     code, name = aab_version(aab)
     play = Play(access_token(load_key()), package)
+    draft = args.draft
     edit = play.call("POST", "edits", {})["id"]
     try:
         release_notes_list = notes_for_listings(play, edit, notes)
@@ -345,25 +368,39 @@ def deploy(aab: Path, track: str, args: argparse.Namespace, notes: dict[str, str
             raise DeployError(f"Google Play read versionCode {bundle.get('versionCode')} from the bundle, the file name says {code}")
         release = {"name": f"{code} ({name})", "versionCodes": [str(code)], "status": "completed",
             "releaseNotes": release_notes_list}
-        if args.rollout:
+        if draft:
+            release["status"] = "draft"
+        elif args.rollout:
             release |= {"status": "inProgress", "userFraction": args.rollout}
-        play.call("PUT", f"edits/{edit}/tracks/{track}", {"track": track, "releases": [release]})
+        try:
+            play.call("PUT", f"edits/{edit}/tracks/{track}", {"track": track, "releases": [release]})
+        except DeployError as error:
+            if draft or not is_draft_app(error):
+                raise
+            # The bundle is already in this edit, so only the release changes
+            print("  the app has never been published, Google only takes a draft release: switching to --draft",
+                flush=True)
+            draft = True
+            release = {key: value for key, value in release.items() if key != "userFraction"} | {"status": "draft"}
+            play.call("PUT", f"edits/{edit}/tracks/{track}", {"track": track, "releases": [release]})
         if args.validate:
             play.call("POST", f"edits/{edit}:validate")
             play.call("DELETE", f"edits/{edit}")
-            print(f"OK: Google Play accepts {name} ({code}) for {track}. Nothing was published (--validate).")
+            kind = " as a draft" if draft else ""
+            print(f"OK: Google Play accepts {name} ({code}) for {track}{kind}. Nothing was published (--validate).")
             return
-        if args.no_review:
-            params = {"changesNotSentForReview": "true"}
-        else:
-            params = {"changesInReviewBehavior": "CANCEL_IN_REVIEW_AND_SUBMIT" if args.replace_in_review else "ERROR_IF_IN_REVIEW"}
-        play.call("POST", f"edits/{edit}:commit", params=params)
+        play.call("POST", f"edits/{edit}:commit", params=commit_params(args, draft))
     except BaseException:
         try:
             play.call("DELETE", f"edits/{edit}")
         except DeployError:
             pass
         raise
+    if draft:
+        print(f"Committed {name} ({code}) to {track} as a draft release; nothing was sent for review.")
+        print(f"  Next, in the Play Console ({track}): add countries/regions if the track has none, edit the draft "
+            "release, check it and save, then send the changes for review in the Publishing overview.")
+        return
     rollout = f", rollout to {args.rollout:.0%}" if args.rollout else ""
     if args.no_review:
         print(f"Committed {name} ({code}) to {track}{rollout}; send it for review in the Play Console.")
@@ -383,15 +420,16 @@ def hint(error: DeployError) -> str:
     if "version code" in lower and "already" in lower:
         return "This versionCode is already on Google Play: raise it (build_android.sh --bump) and build again."
     if "draft app" in lower:
-        return "The app has never been published: the first release goes through the Play Console."
+        return ("The app has never been published, so Google only takes draft releases: run again with --draft, then "
+            "add countries/regions and send the draft for review in the Play Console.")
     if "targeting no countries" in lower:
         return ("This track has no countries or regions. For production that means the app has not been released "
             "there yet (still in testing): pick its testing track, e.g. --track alpha, or open production in the Play Console.")
     if isinstance(error, ApiError) and (error.status == 401 or error.status == 403 and any(
             word in lower for word in ("permission", "has not been used", "disabled", "unauthorized"))):
         return ("Is the service account invited in the Play Console (Users and permissions) with release rights for "
-            "this app, and the Google Play Android Developer API enabled in its Cloud project? New rights can take "
-            "a while to arrive.")
+            "this app (rights are granted per app, check them for a new one), and the Google Play Android Developer "
+            "API enabled in its Cloud project? New rights can take a while to arrive.")
     return ""
 
 
@@ -406,6 +444,7 @@ def main() -> int:
     parser.add_argument("--validate", action="store_true")
     parser.add_argument("--replace-in-review", action="store_true")
     parser.add_argument("--no-review", action="store_true")
+    parser.add_argument("--draft", action="store_true")
     parser.add_argument("--check", action="store_true")
     parser.add_argument("--version-code", type=int)
     parser.add_argument("--version-name")
@@ -414,6 +453,8 @@ def main() -> int:
     try:
         if args.rollout is not None and not 0 < args.rollout < 1:
             raise DeployError("--rollout takes a fraction between 0 and 1, e.g. 0.2")
+        if args.draft and args.rollout is not None:
+            raise DeployError("a draft has no rollout; set it in the Play Console when you send the draft")
         if args.check and args.version_code is not None and args.version_name:
             aab, (code, name) = None, (args.version_code, args.version_name)
         else:
@@ -424,7 +465,7 @@ def main() -> int:
         package = package_name()
         notes = release_notes(code, name)
         key = load_key()
-        print(f"Google Play: {package} {name} ({code}) → {track}")
+        print(f"Google Play: {package} {name} ({code}) → {track}{' (draft)' if args.draft else ''}")
         print(f"  service account {key['client_email']}")
         for language, text in notes.items():
             print(f"  {language}: " + text.replace("\n", "\n      "))

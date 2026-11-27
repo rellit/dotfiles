@@ -3,6 +3,10 @@
 
 Usage: tools/android/play_listing.py [options]
   --texts-only         only title, short and full description, no pictures
+  --create-languages   create the languages of listing.md (de-DE, en-US) on Google Play where they are
+                       missing (default: only update languages the app already has)
+  --icon               also replace the icon with build/store/icon_512.png (512×512 PNG, at most 1 MB;
+                       works with --texts-only too)
   --validate           do everything except publishing: Google checks the edit, then it is thrown away
   --replace-in-review  if other changes are still in review (a release, say), withdraw them and send
                        everything again together (default: stop with an error and change nothing)
@@ -12,11 +16,17 @@ Usage: tools/android/play_listing.py [options]
 Reads what tools/generate_store_assets.py wrote to build/store/: listing.md (sections "## de-DE" and
 "## en-US" with title, short and full description) and <de|en>/phone_NN_*.png plus
 feature_graphic.png. Every de-* listing language of the app gets the German version, every en-*
-language the English one. Screenshots replace the ones on Google Play, in file order. The icon stays
-as it is. Credentials and API calls as in play_deploy.py (same service account).
+language the English one. Screenshots replace the ones on Google Play, in file order. Without --icon
+the icon stays as it is. Credentials and API calls as in play_deploy.py (same service account).
+
+New app: a fresh app has no listing languages yet, so run it with --create-languages --icon
+(--validate first). The service account also needs "Manage store presence" for this app (Play Console,
+Users and permissions; rights are granted per app). Without it the uploads go through, but checking
+or committing the edit ends with HTTP 403.
 """
 import argparse
 import re
+import struct
 import sys
 import urllib.parse
 from pathlib import Path
@@ -33,6 +43,14 @@ LABELS = {
     "en": {"title": "Title", "shortDescription": "Short description", "fullDescription": "Full description"},
 }
 MAX_SCREENSHOTS = 8
+ICON_SIZE = 512
+ICON_MAX_BYTES = 1024 * 1024
+
+
+def listing_language(lang: str) -> str:
+    """The full language code of the listing.md section, e.g. de-DE."""
+    text = (STORE / "listing.md").read_text(encoding="utf-8")
+    return re.search(rf"^## ({lang}-[A-Z]+)$", text, re.M).group(1)
 
 
 def listing_texts(lang: str) -> dict[str, str]:
@@ -70,6 +88,21 @@ def pictures(lang: str) -> tuple[list[Path], Path]:
     return shots, feature
 
 
+def store_icon() -> Path:
+    path = STORE / "icon_512.png"
+    if not path.is_file():
+        raise DeployError(f"{path.relative_to(ROOT)} missing: run python3 tools/generate_store_assets.py")
+    head = path.read_bytes()[:24]
+    if head[:8] != b"\x89PNG\r\n\x1a\n" or head[12:16] != b"IHDR":
+        raise DeployError(f"{path.name} is not a PNG")
+    width, height = struct.unpack(">II", head[16:24])
+    if (width, height) != (ICON_SIZE, ICON_SIZE):
+        raise DeployError(f"{path.name} is {width}×{height}, Google Play takes {ICON_SIZE}×{ICON_SIZE}")
+    if path.stat().st_size > ICON_MAX_BYTES:
+        raise DeployError(f"{path.name} has {path.stat().st_size // 1024} KB, Google Play takes at most 1024 KB")
+    return path
+
+
 def upload_image(play: Play, edit: str, language: str, image_type: str, path: Path) -> None:
     url = f"{UPLOAD_API}/{play.package}/edits/{edit}/listings/{language}/{image_type}?" + \
         urllib.parse.urlencode({"uploadType": "media"})
@@ -79,17 +112,31 @@ def upload_image(play: Play, edit: str, language: str, image_type: str, path: Pa
         http("POST", url, stream, headers, timeout=300)
 
 
-def publish(args: argparse.Namespace, texts: dict[str, dict], images: dict[str, tuple]) -> None:
+def publish(args: argparse.Namespace, texts: dict[str, dict], images: dict[str, tuple], icon: Path | None) -> None:
     play = Play(access_token(load_key()), package_name())
     edit = play.call("POST", "edits", {})["id"]
     try:
-        languages = [listing["language"] for listing in play.call("GET", f"edits/{edit}/listings").get("listings", [])]
+        existing = [listing["language"] for listing in play.call("GET", f"edits/{edit}/listings").get("listings", [])]
+        missing = [code for code in (listing_language(lang) for lang in texts) if code not in existing]
+        if args.create_languages:
+            languages = existing + missing
+        else:
+            languages = existing
+            for code in missing:
+                print(f"  {code}: not on Google Play, skipped (--create-languages adds it)")
         targets = [(language, language[:2]) for language in languages if language[:2] in texts]
         if not targets:
-            raise DeployError(f"the app has no de-* or en-* listing on Google Play (found: {', '.join(languages) or 'none'})")
+            raise DeployError(f"the app has no de-* or en-* listing on Google Play (found: {', '.join(existing) or 'none'}); "
+                "for a new app: --create-languages --icon")
         for language, lang in targets:
-            play.call("PATCH", f"edits/{edit}/listings/{language}", {"language": language} | texts[lang])
-            print(f"  {language}: texts", flush=True)
+            new = language not in existing
+            # PUT creates a listing language, PATCH only changes one the app already has
+            play.call("PUT" if new else "PATCH", f"edits/{edit}/listings/{language}", {"language": language} | texts[lang])
+            print(f"  {language}: {'new language, ' if new else ''}texts", flush=True)
+            if icon:
+                play.call("DELETE", f"edits/{edit}/listings/{language}/icon")
+                upload_image(play, edit, language, "icon", icon)
+                print(f"  {language}: icon", flush=True)
             if args.texts_only:
                 continue
             shots, feature = images[lang]
@@ -121,28 +168,42 @@ def publish(args: argparse.Namespace, texts: dict[str, dict], images: dict[str, 
         print("Sent the listing for review. Without managed publishing it goes live once Google approves it.")
 
 
+def listing_hint(error: DeployError) -> str:
+    if isinstance(error, ApiError) and error.status == 403 and "permission" in str(error).lower():
+        return ("The service account needs \"Manage store presence\" for this app: Play Console, Users and "
+            "permissions. Rights are granted per app, so a new app needs it added; it can take a while to arrive.")
+    return hint(error)
+
+
 def main() -> int:
     if {"-h", "--help"} & set(sys.argv[1:]):
         print(__doc__.strip())
         return 0
     parser = argparse.ArgumentParser(usage="tools/android/play_listing.py [options] (see --help)", add_help=False)
-    for flag in ("--texts-only", "--validate", "--replace-in-review", "--no-review", "--check"):
+    for flag in ("--texts-only", "--create-languages", "--icon", "--validate", "--replace-in-review", "--no-review",
+            "--check"):
         parser.add_argument(flag, action="store_true")
     args = parser.parse_args()
     try:
         texts = {lang: listing_texts(lang) for lang in LABELS}
         images = {} if args.texts_only else {lang: pictures(lang) for lang in LABELS}
+        icon = store_icon() if args.icon else None
         print(f"Google Play listing: {package_name()}")
         for lang in LABELS:
             t = texts[lang]
             extra = "" if args.texts_only else f", {len(images[lang][0])} screenshots + feature graphic"
-            print(f"  {lang}: \"{t['title']}\" / {len(t['shortDescription'])} / {len(t['fullDescription'])} characters{extra}")
+            print(f"  {listing_language(lang)}: \"{t['title']}\" / {len(t['shortDescription'])} / "
+                f"{len(t['fullDescription'])} characters{extra}")
+        if icon:
+            print(f"  icon: {icon.relative_to(ROOT)} for every language")
+        if args.create_languages:
+            print("  languages missing on Google Play get created")
         if args.check:
             return 0
-        publish(args, texts, images)
+        publish(args, texts, images, icon)
     except DeployError as error:
         print(f"ERROR: {error}", file=sys.stderr)
-        extra = hint(error)
+        extra = listing_hint(error)
         if extra:
             print(f"  {extra}", file=sys.stderr)
         return 1
