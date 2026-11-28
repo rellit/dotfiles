@@ -147,6 +147,9 @@ Einbau im Controller:
 3. `_close_top_dialog()`/`go_back()`: `more_games_overlay.close()` vor den Einstellungen; in
    `_dialog_open()` bzw. die Overlay-Listen aufnehmen (Banner-Werbung, Gegen-KI).
 4. `share_game()`: `if not MoreGames.share(): MoreGames.toast(settings_overlay, tr("Copied to the clipboard"))`.
+- Native Android-Apps (Patience, `~/Entwicklung/solitär`): dasselbe `tools/more_games.py` erkennt
+  `app/build.gradle.kts` und schreibt `app/src/main/assets/more_games/catalog.json` + Banner; App-Seite
+  `platform/MoreGames.kt` (Teilen-Intent, `market://` mit Web-Rückfall) und `screens/moregames/`.
 - Ohne Einstellungs-Dialog (Wacky Bridge) zuoberst unter ABOUT. Heißt der Dialog nur „SOUND“, in
   `SETTINGS`/„EINSTELLUNGEN“ umbenennen (DataBurst, Sky Bridge).
 
